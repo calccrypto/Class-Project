@@ -46,7 +46,7 @@ file for full license.
 #include <map>
 #include <sstream>
 
-// #include "OpenPGP.h"
+#include "../OpenPGP/PGP.h"
 
 const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1};
 const uint16_t DEFAULT_PORT = 45678;                            // Ephemeral port

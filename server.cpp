@@ -30,19 +30,19 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 */
 
 #include <iostream>
-#include <list>
+#include <set>
 
 #include "shared.h"
 
 struct server_args{
     pthread_mutex_t & mutex;
-    std::list <pthread_t> & threads;
+    std::set <pthread_t> & threads;
 
-    server_args(pthread_mutex_t & m, std::list <pthread_t> & t) : mutex(m), threads(t) {}
+    server_args(pthread_mutex_t & m, std::set <pthread_t> & t) : mutex(m), threads(t) {}
 };
 
 // stuff the user sees
-void * client(void * args){
+void * client_thread(void * args){
     int csock = * (intptr_t *) args;
 
     // accept commands
@@ -54,6 +54,7 @@ void * client(void * args){
         // put data into stringstream
         std::stringstream s; s << data;
 
+        // quit works no matter what
         if (data == "quit"){
             // clean up data
             loggedin = false;
@@ -65,16 +66,26 @@ void * client(void * args){
             // if (data == "change"){}
             // else if (data == "talk"){}
             // else if (data == ""){}
-
+            // else{
+                // // send "unknown command packet"
+            // }
         }
         else{           // if not, only allow for creating account and logging in
             if (data == "login"){
                 // login
                 std::string username = "Username: ", password = "Password: ";
-                // while (!send_data(csock, username, 10));
-                receive_data(csock, username, PACKET_SIZE);
-                // while (!send_data(csock, password, 10));
-                receive_data(csock, password, PACKET_SIZE);
+                if (!send_data(csock, username, 10)){
+                    return NULL;
+                }
+                if (!receive_data(csock, username, PACKET_SIZE)){
+                    return NULL;
+                }
+                if (!!send_data(csock, password, 10)){
+                    return NULL;
+                }
+                if (!receive_data(csock, password, PACKET_SIZE)){
+                    return NULL;
+                }
 
                 // loggedin = true;
             }
@@ -90,11 +101,18 @@ void * client(void * args){
     return NULL;
 }
 
+const std::map <std::string, std::string> SERVER_HELP = {
+    std::pair <std::string, std::string>("help", ""),
+    std::pair <std::string, std::string>("quit", ""),
+    // std::pair <std::string, std::string>("stop", "thread-id"),
+    // std::pair <std::string, std::string>("", ""),
+};
+
 // admin command line
-void * server(void * args){
+void * server_thread(void * args){
     server_args data = * (server_args *) args;
     pthread_mutex_t & mutex = data.mutex;
-    std::list <pthread_t> & clients = data.threads;
+    std::set <pthread_t> & clients = data.threads;
 
     // take in and parse commands
     while (true){
@@ -102,16 +120,19 @@ void * server(void * args){
         std::cout << "> ";
         std::cin >> cmd;
 
-        if ((cmd == "h") || (cmd == "help")){
-            std::cout << "Possible commands:\n"
-                      << "    h[elp]      - get this screen\n"
-                      << "    shutdown    - stop server\n"
-                      << std::endl;
+        if (cmd == "help"){
+            for(std::pair <std::string, std::string> const & cmd : SERVER_HELP){
+                std::cout << cmd.first << " " << cmd.second << std::endl;
+            }
         }
-        else if (cmd == "shutdown"){
+        // else if(cmd == "stop"){      // stop a single thread
+
+        // }
+        else if (cmd == "quit"){     // stop server
             // terminate threads
-            for(pthread_t & tid : clients){
+            for(pthread_t const & tid : clients){
                 pthread_cancel(tid); // not safe - need to change
+                clients.erase(tid);  // might cause problems
             }
             break;
         }
@@ -162,12 +183,12 @@ int main(int argc, char * argv[]){
     std::cout << "Listening on socket." << std::endl << std::endl;
 
     pthread_mutex_t mutex;                  // global mutex
-    std::list <pthread_t> threads;          // list of running threads
+    std::set <pthread_t> threads;           // list of running threads
     server_args s_args(mutex, threads);
 
     // start administrator command line
     pthread_t admin;
-    if (pthread_create(&admin, NULL, server, (void *) &s_args) != 0){
+    if (pthread_create(&admin, NULL, server_thread, (void *) &s_args) != 0){
         std::cerr << "Unable to start administrator command line" << std::endl;
         return 0;
     }
@@ -181,9 +202,10 @@ int main(int argc, char * argv[]){
             continue;
 
         // start thread
-        pthread_t tid;
-        pthread_create(&tid, NULL, client, (void *) (intptr_t) csock);
-        threads.push_back(tid);
+        pthread_t client;
+        int tid = pthread_create(&client, NULL, client_thread, (void *) (intptr_t) csock);
+        threads.insert(client);
+        std::cout << "Thread " << tid << " started" << std::endl;
     }
 
     close(lsock);

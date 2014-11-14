@@ -34,8 +34,16 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include <iostream>
 
 #include "shared.h"
-const std::map <std::string, std::string> CLIENT_HELP = {
-    std::pair <std::string, std::string>("help", "help menu"),
+
+const std::map <std::string, std::string> CLIENT_NOT_LOGGED_IN_HELP = {
+    std::pair <std::string, std::string>("help", ""),
+    std::pair <std::string, std::string>("quit", ""),
+    std::pair <std::string, std::string>("login", ""),
+    std::pair <std::string, std::string>("new-account", ""),
+};
+
+const std::map <std::string, std::string> CLIENT_LOGGED_IN_HELP = {
+    std::pair <std::string, std::string>("help", ""),
     std::pair <std::string, std::string>("change", "username|password"),
     std::pair <std::string, std::string>("talk", "name"),
     std::pair <std::string, std::string>("quit", ""),
@@ -43,7 +51,6 @@ const std::map <std::string, std::string> CLIENT_HELP = {
 };
 
 int main(int argc, char * argv[]){
-
     std::array <uint8_t, 4> ip = LOCALHOST;     // default localhost
     uint16_t port = DEFAULT_PORT;               // port to send data on
 
@@ -80,12 +87,38 @@ int main(int argc, char * argv[]){
         return -1;
     }
 
+    std::cout << "Connected to " << (int) ip[0] << "." << (int) ip[1] << "." << (int) ip[2] << "." << (int) ip[3] << " on port " << port << std::endl;
+
+
     /*
         TODO:
             login/create account
             simple command line for user input
     */
 
+    // login, create account or help
+    while (true){
+        std::string input;
+        std::cin >> input;
+
+        if (input == "help"){
+            for(std::pair <std::string, std::string> const & help : CLIENT_NOT_LOGGED_IN_HELP){
+                std::cout << help.first << " " << help.second << std::endl;
+            }
+        }
+        else if (input == "quit"){
+            return 0;
+        }
+        else if (input == "new-account"){
+            // does not automatically login after finished makng new account
+        }
+        else if(input == "login"){
+            // breaks out of loop after authenticating
+        }
+        else{
+            std::cerr << "Error: Unknown input: " << input << std::endl;        
+        }
+    }
 
     // std::string data;
     // if (!receive_data(csock, data, PACKET_SIZE)){
