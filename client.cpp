@@ -70,23 +70,23 @@ int main(int argc, char * argv[]){
     }
 
     // set up socket connection
-	int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if(!sock){
-		std::cerr << "Error: Failed to create socket" << std::endl;
-		return -1;
-	}
-	sockaddr_in addr;
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(port);
-	unsigned char* ipaddr = reinterpret_cast<unsigned char*>(&addr.sin_addr);
-	ipaddr[0] = ip[0];
-	ipaddr[1] = ip[1];
-	ipaddr[2] = ip[2];
-	ipaddr[3] = ip[3];
-	if(0 != connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr))){ // can probably remove if statement, buyt keep connect()
+    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if(!sock){
+        std::cerr << "Error: Failed to create socket" << std::endl;
+        return -1;
+    }
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    unsigned char* ipaddr = reinterpret_cast<unsigned char*>(&addr.sin_addr);
+    ipaddr[0] = ip[0];
+    ipaddr[1] = ip[1];
+    ipaddr[2] = ip[2];
+    ipaddr[3] = ip[3];
+    if(0 != connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr))){ // can probably remove if statement, buyt keep connect()
         std::cout << "Error: Failed to connect to " << (int) ip[0] << "." << (int) ip[1] << "." << (int) ip[2] << "." << (int) ip[3] << " on port " << port << std::endl;
-		return -1;
-	}
+        return -1;
+    }
 
     /*
         TODO:
