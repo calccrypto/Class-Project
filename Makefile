@@ -5,12 +5,8 @@ CFLAGS=-std=c++11 -Wall
 debug: CFLAGS += -g
 debug: all
 
-all: client server
-
-client:
+all:
 	$(CXX) $(CFLAGS) client.cpp $(LFLAGS) -o client
-
-server:
 	$(CXX) $(CFLAGS) server.cpp $(LFLAGS) -o server
 
 clean:

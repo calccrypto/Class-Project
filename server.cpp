@@ -25,18 +25,99 @@ THE SOFTWARE.
 
 Server-side code for the Kerberos-based communication class project.
 
-The networking code using POSIX sockets (Lines 61 - 104) was written by Andrew Zonenberg, 
+The networking code using POSIX sockets (Lines 61 - 104) was written by Andrew Zonenberg,
 under the 3-Clause BSD License. Please see LICENSE file for full license.
 */
 
 #include <iostream>
+#include <list>
 
 #include "shared.h"
 
-/*
-    need thread function for each connection
-    need thread function for admin
-*/
+struct server_args{
+    pthread_mutex_t & mutex;
+    std::list <pthread_t> & threads;
+
+    server_args(pthread_mutex_t & m, std::list <pthread_t> & t) : mutex(m), threads(t) {}
+};
+
+// stuff the user sees
+void * client(void * args){
+    int csock = * (intptr_t *) args;
+
+    // accept commands
+    std::string data;
+    bool loggedin = false;
+    while (receive_data(csock, data, PACKET_SIZE)){
+        // decrypt data
+
+        // put data into stringstream
+        std::stringstream s; s << data;
+
+        if (data == "quit"){
+            // clean up data
+            loggedin = false;
+            return NULL;
+        }
+
+        // parse input
+        if (loggedin){  // if identity is established
+            // if (data == "change"){}
+            // else if (data == "talk"){}
+            // else if (data == ""){}
+
+        }
+        else{           // if not, only allow for creating account and logging in
+            if (data == "login"){
+                // login
+                std::string username = "Username: ", password = "Password: ";
+                // while (!send_data(csock, username, 10));
+                receive_data(csock, username, PACKET_SIZE);
+                // while (!send_data(csock, password, 10));
+                receive_data(csock, password, PACKET_SIZE);
+
+                // loggedin = true;
+            }
+            else if (data == "new-account"){
+                // create new account
+            }
+            else{
+                // send "unknown command packet"
+            }
+        }
+    }
+
+    return NULL;
+}
+
+// admin command line
+void * server(void * args){
+    server_args data = * (server_args *) args;
+    pthread_mutex_t & mutex = data.mutex;
+    std::list <pthread_t> & clients = data.threads;
+
+    // take in and parse commands
+    while (true){
+        std::string cmd;
+        std::cout << "> ";
+        std::cin >> cmd;
+
+        if ((cmd == "h") || (cmd == "help")){
+            std::cout << "Possible commands:\n"
+                      << "    h[elp]      - get this screen\n"
+                      << "    shutdown    - stop server\n"
+                      << std::endl;
+        }
+        else if (cmd == "shutdown"){
+            // terminate threads
+            for(pthread_t & tid : clients){
+                pthread_cancel(tid); // not safe - need to change
+            }
+            break;
+        }
+    }
+    return NULL;
+}
 
 int main(int argc, char * argv[]){
     uint16_t port = DEFAULT_PORT;               // port to listen on
@@ -78,11 +159,18 @@ int main(int argc, char * argv[]){
         std::cerr << "failed to listen on socket." << std::endl;
         return -1;
     }
-    std::cout << "Listening on socket." << std::endl;
+    std::cout << "Listening on socket." << std::endl << std::endl;
 
-    // Create thread for bank console
-    // pthread_t tid;
-    // pthread_create(&tid, NULL, console_thread, NULL);
+    pthread_mutex_t mutex;                  // global mutex
+    std::list <pthread_t> threads;          // list of running threads
+    server_args s_args(mutex, threads);
+
+    // start administrator command line
+    pthread_t admin;
+    if (pthread_create(&admin, NULL, server, (void *) &s_args) != 0){
+        std::cerr << "Unable to start administrator command line" << std::endl;
+        return 0;
+    }
 
     while (true){
         // listen for client connections
@@ -93,7 +181,9 @@ int main(int argc, char * argv[]){
             continue;
 
         // start thread
-        // pthread_create(&tid, NULL, client_thread, (void *) (intptr_t) csock);
+        pthread_t tid;
+        pthread_create(&tid, NULL, client, (void *) (intptr_t) csock);
+        threads.push_back(tid);
     }
 
     close(lsock);

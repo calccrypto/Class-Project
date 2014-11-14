@@ -25,7 +25,7 @@ THE SOFTWARE.
 
 Client-side code for the Kerberos-based communication class project.
 
-The networking code using POSIX sockets (Lines 73 - 89) was written by Andrew Zonenberg, 
+The networking code using POSIX sockets (Lines 73 - 89) was written by Andrew Zonenberg,
 under the 3-Clause BSD License. Please see LICENSE file for full license.
 */
 
@@ -34,6 +34,13 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include <iostream>
 
 #include "shared.h"
+const std::map <std::string, std::string> CLIENT_HELP = {
+    std::pair <std::string, std::string>("help", "help menu"),
+    std::pair <std::string, std::string>("change", "username|password"),
+    std::pair <std::string, std::string>("talk", "name"),
+    std::pair <std::string, std::string>("quit", ""),
+    // std::pair <std::string, std::string>("", ""),
+};
 
 int main(int argc, char * argv[]){
 
@@ -42,12 +49,12 @@ int main(int argc, char * argv[]){
 
     if (argc == 1);                             // no arguments
     else if (argc == 3){                        // IP address and port given
-        char * tok = strtok(argv[1], ".");      // parse input IP address
+        char * tok = strtok(argv[1], ".");
         for(uint8_t & octet : ip){
             octet = atoi(tok);
             tok = strtok(NULL, ".");
         }
-        port = atoi(argv[2]);                   // set port
+        port = atoi(argv[2]);
     }
     else{                                       // bad input arguments
         std::cerr << "Syntax: " << argv[0] << "[ip-address port]" << std::endl;
@@ -75,9 +82,30 @@ int main(int argc, char * argv[]){
 
     /*
         TODO:
-            Login
+            login/create account
             simple command line for user input
     */
+
+
+    // std::string data;
+    // if (!receive_data(csock, data, PACKET_SIZE)){
+        // continue;
+    // }
+    // std::stringstream s; s << data >> data;
+    // if (data == "help"){
+    // }
+    // else if (data == "quit"){
+        // // clean data
+        // // remove thread
+        // return NULL;
+    // }
+    // else if (data == "change"){
+        // // change username or password
+
+    // }
+    // else if (data == "talk"){
+
+    // }
 
     close(sock);
     return 0;

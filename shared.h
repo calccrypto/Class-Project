@@ -26,9 +26,9 @@ THE SOFTWARE.
 Functions used by client and server
     - networking
     - global values
-    
+
 The networking code using POSIX sockets (Lines 52 - 65) was adapted from code
-written by Andrew Zonenberg, under the 3-Clause BSD License. Please see LICENSE 
+written by Andrew Zonenberg, under the 3-Clause BSD License. Please see LICENSE
 file for full license.
 */
 
@@ -43,11 +43,18 @@ file for full license.
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <map>
 #include <sstream>
+
+// #include "OpenPGP.h"
 
 const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1};
 const uint16_t DEFAULT_PORT = 45678;                            // Ephemeral port
 const unsigned int PACKET_SIZE = 1024;                          // 1024 octets
+
+// typedef SYM  AES;
+// typedef HASH SHA256;
+// const unsigned int DIGEST_SIZE = HASH().digestsize();
 
 // send data and check if it was sent properly
 bool send_data(int sock, const std::string & data, const ssize_t & expected_size){
