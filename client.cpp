@@ -40,29 +40,14 @@ int main(int argc, char * argv[]){
     std::array <uint8_t, 4> ip = LOCALHOST;     // default localhost
     uint16_t port = DEFAULT_PORT;               // port to send data on
 
-    if (argc == 1){                             // no arguments
-        std::string ip_str;
-        std::cout << "Please enter KDC IPv4 address: ";
-        char octet[4];
-        std::cin.getline(octet, 4, '.');
-        ip[0] = atoi(octet);
-        std::cin.getline(octet, 4, '.');
-        ip[1] = atoi(octet);
-        std::cin.getline(octet, 4, '.');
-        ip[2] = atoi(octet);
-        std::cin.getline(octet, 4, '\n');
-        ip[3] = atoi(octet);
-
-        std::cout << "Please enter the KDC port number: ";
-        std::cin >> port;
-    }
+    if (argc == 1);                             // no arguments
     else if (argc == 3){                        // IP address and port given
-        char * tok = strtok(argv[1], ".");
+        char * tok = strtok(argv[1], ".");      // parse input IP address
         for(uint8_t & octet : ip){
             octet = atoi(tok);
             tok = strtok(NULL, ".");
         }
-        port = atoi(argv[2]);
+        port = atoi(argv[2]);                   // set port
     }
     else{                                       // bad input arguments
         std::cerr << "Syntax: " << argv[0] << "[ip-address port]" << std::endl;

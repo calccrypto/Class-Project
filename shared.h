@@ -46,7 +46,7 @@ file for full license.
 #include <sstream>
 
 const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1};
-const uint16_t DEFAULT_PORT = 1234;
+const uint16_t DEFAULT_PORT = 45678;                            // Ephemeral port
 const unsigned int PACKET_SIZE = 1024;                          // 1024 octets
 
 // send data and check if it was sent properly

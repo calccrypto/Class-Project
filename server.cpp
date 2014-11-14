@@ -41,10 +41,7 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 int main(int argc, char * argv[]){
     uint16_t port = DEFAULT_PORT;               // port to listen on
 
-    if (argc == 1){                             // no arguments
-        std::cout << "Please enter the KDC port number: ";
-        std::cin >> port;
-    }
+    if (argc == 1);                             // no input port
     else if (argc == 2){                        // port given
         port = atoi(argv[1]);
     }
@@ -55,32 +52,32 @@ int main(int argc, char * argv[]){
 
     std::cout << std::endl;
 
-	//socket setup
-	int lsock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if(!lsock)
-	{
-		std::cerr << "Fail to create socket" << std::endl;
-		return -1;
-	}
+    //socket setup
+    int lsock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if(!lsock)
+    {
+        std::cerr << "Fail to create socket" << std::endl;
+        return -1;
+    }
     std::cout << "Socket created with port " << port << "." << std::endl;
 
-	//listening address
-	sockaddr_in addr_l;
-	addr_l.sin_family = AF_INET;
+    //listening address
+    sockaddr_in addr_l;
+    addr_l.sin_family = AF_INET;
     addr_l.sin_addr.s_addr = htonl(INADDR_ANY);
-	addr_l.sin_port = htons(port);
+    addr_l.sin_port = htons(port);
 
-	if(0 != bind(lsock, reinterpret_cast<sockaddr*>(&addr_l), sizeof(addr_l)))
-	{
-		std::cerr << "failed to bind socket." << std::endl;
-		return -1;
-	}
+    if(0 != bind(lsock, reinterpret_cast<sockaddr*>(&addr_l), sizeof(addr_l)))
+    {
+        std::cerr << "failed to bind socket." << std::endl;
+        return -1;
+    }
     std::cout << "Finished binding to socket." << std::endl;
-	if(0 != listen(lsock, SOMAXCONN))
-	{
-		std::cerr << "failed to listen on socket." << std::endl;
-		return -1;
-	}
+    if(0 != listen(lsock, SOMAXCONN))
+    {
+        std::cerr << "failed to listen on socket." << std::endl;
+        return -1;
+    }
     std::cout << "Listening on socket." << std::endl;
 
     // Create thread for bank console
@@ -89,14 +86,14 @@ int main(int argc, char * argv[]){
 
     while (true){
         // listen for client connections
-		sockaddr_in unused;
-		socklen_t size = sizeof(unused);
-		int csock = accept(lsock, reinterpret_cast<sockaddr*>(&unused), &size);
-		if(csock < 0)	//bad client, skip it
-			continue;
+        sockaddr_in unused;
+        socklen_t size = sizeof(unused);
+        int csock = accept(lsock, reinterpret_cast<sockaddr*>(&unused), &size);
+        if(csock < 0)    //bad client, skip it
+            continue;
 
         // start thread
-		// pthread_create(&tid, NULL, client_thread, (void *) (intptr_t) csock);
+        // pthread_create(&tid, NULL, client_thread, (void *) (intptr_t) csock);
     }
 
     close(lsock);
