@@ -6,6 +6,9 @@ Copyright (c) 2014 Jason Lee @ calccrypto at gmail.com
 Please see LICENSE file for license. The networking code
 was modified from code written by Andrew Zonenberg.
 
+POSIX libraries are required. The `accept4` function,
+which is nonstandard is also used.
+
 OpenPGP (https://github.com/calccrypto/OpenPGP), and
 its dependencies are required to build this project.
 The makefile assumes that the folder containing this

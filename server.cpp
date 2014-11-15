@@ -29,20 +29,25 @@ The networking code using POSIX sockets (Lines 61 - 104) was written by Andrew Z
 under the 3-Clause BSD License. Please see LICENSE file for full license.
 */
 
+#include <fstream>
 #include <iostream>
+#include <map>
 #include <set>
 
 #include "shared.h"
+#include "user.h"
 
 struct server_args{
-    pthread_mutex_t & mutex;
-    std::set <pthread_t> & threads;
+    pthread_mutex_t *& mutex;
+    std::map <uint32_t, pthread_t> *& threads;
+    bool *& quit;
 
-    server_args(pthread_mutex_t & m, std::set <pthread_t> & t) : mutex(m), threads(t) {}
+    server_args(pthread_mutex_t *& m, std::map <uint32_t, pthread_t> *& t, bool *& q) : mutex(m), threads(t), quit(q) {}
 };
 
 // stuff the user sees
 void * client_thread(void * args){
+    std::cout << "Thread " << pthread_self() << " started" << std::endl;
     int csock = * (intptr_t *) args;
 
     // accept commands
@@ -63,8 +68,7 @@ void * client_thread(void * args){
 
         // parse input
         if (loggedin){  // if identity is established
-            // if (data == "change"){}
-            // else if (data == "talk"){}
+            // if (data == "talk"){}
             // else if (data == ""){}
             // else{
                 // // send "unknown command packet"
@@ -97,46 +101,91 @@ void * client_thread(void * args){
             }
         }
     }
-
     return NULL;
 }
 
 const std::map <std::string, std::string> SERVER_HELP = {
-    std::pair <std::string, std::string>("help", ""),
-    std::pair <std::string, std::string>("quit", ""),
-    // std::pair <std::string, std::string>("stop", "thread-id"),
+    std::pair <std::string, std::string>("help", ""),               // print help menu
+    std::pair <std::string, std::string>("quit", ""),               // stop server
+    // std::pair <std::string, std::string>("stop", "thread-id"),   // stop a single thread
     // std::pair <std::string, std::string>("", ""),
 };
 
 // admin command line
 void * server_thread(void * args){
     server_args data = * (server_args *) args;
-    pthread_mutex_t & mutex = data.mutex;
-    std::set <pthread_t> & clients = data.threads;
+    pthread_mutex_t * mutex = data.mutex;
+    std::map <uint32_t, pthread_t> * clients = data.threads;
+
+    // open (and decrypt) user list
+    std::set <User> users;
+    std::ifstream user_file("users", std::ios::in | std::ios::binary);
+    if (user_file){ // if user file exists
+        // read from it
+        std::stringstream s; s << user_file.rdbuf();
+        std::string user_data = s.str();
+
+        // check encrypted checksum
+
+        // copy current data to backup (after checking that current file is good)
+        std::ofstream backup("users.back", std::ios::binary);
+        backup << user_data;
+
+        // decrypt data
+        // check checksum
+
+        // copy data into memory
+        while (user_data.size()){
+            users.emplace(User(user_data));
+        }
+
+        user_file.close(); // force the file to close
+    }
 
     // take in and parse commands
     while (true){
         std::string cmd;
         std::cout << "> ";
-        std::cin >> cmd;
-
-        if (cmd == "help"){
-            for(std::pair <std::string, std::string> const & cmd : SERVER_HELP){
-                std::cout << cmd.first << " " << cmd.second << std::endl;
+        std::getline(std::cin, cmd);
+        std::stringstream s; s << cmd;
+        if (s >> cmd){
+            if (cmd == "help"){
+                for(std::pair <std::string, std::string> const & cmd : SERVER_HELP){
+                    std::cout << cmd.first << " " << cmd.second << std::endl;
+                }
             }
-        }
-        // else if(cmd == "stop"){      // stop a single thread
-
-        // }
-        else if (cmd == "quit"){     // stop server
-            // terminate threads
-            for(pthread_t const & tid : clients){
-                pthread_cancel(tid); // not safe - need to change
-                clients.erase(tid);  // might cause problems
+            else if (cmd == "stop"){
+                uint32_t tid;
+                if ((s >> tid) && (clients -> find(tid) != clients -> end())){
+                    pthread_cancel(clients -> at(tid));   // not safe (?)
+                    clients -> erase(tid);
+                }
             }
-            break;
+            else if (cmd == "quit"){     // stop server
+                break;
+            }
         }
     }
+    // Ending server
+
+    // terminate threads
+    // while (clients.size()){
+        // pthread_cancel(clients.begin() -> second);  // not safe (?)
+        // clients.erase(clients.begin() -> first);
+    // }
+
+    // write user list to file
+    std::ofstream save("user", std::ios::binary);
+    for(User const & u : users){
+        save << u;
+    }
+
+    // write to backup
+    std::ofstream backup("user.back", std::ios::binary);
+    backup << save.rdbuf();
+
+    *data.quit = true;
+
     return NULL;
 }
 
@@ -182,9 +231,10 @@ int main(int argc, char * argv[]){
     }
     std::cout << "Listening on socket." << std::endl << std::endl;
 
-    pthread_mutex_t mutex;                  // global mutex
-    std::set <pthread_t> threads;           // list of running threads
-    server_args s_args(mutex, threads);
+    pthread_mutex_t * mutex = new pthread_mutex_t;                                      // global mutex
+    std::map <uint32_t, pthread_t> * threads = new std::map <uint32_t, pthread_t> ();    // list of running threads
+    bool * quit = new bool (false);
+    server_args s_args(mutex, threads, quit);
 
     // start administrator command line
     pthread_t admin;
@@ -193,19 +243,20 @@ int main(int argc, char * argv[]){
         return 0;
     }
 
-    while (true){
-        // listen for client connections
+    uint32_t thread_count = 0;
+    while (!*quit){
+        // listen for client connectionscd ..
         sockaddr_in unused;
         socklen_t size = sizeof(unused);
-        int csock = accept(lsock, reinterpret_cast<sockaddr*>(&unused), &size);
+        int csock = accept4(lsock, reinterpret_cast<sockaddr*>(&unused), &size, O_NONBLOCK);
         if(csock < 0)    //bad client, skip it
             continue;
 
         // start thread
         pthread_t client;
-        int tid = pthread_create(&client, NULL, client_thread, (void *) (intptr_t) csock);
-        threads.insert(client);
-        std::cout << "Thread " << tid << " started" << std::endl;
+        // keep on trying to create thread
+        while (pthread_create(&client, NULL, client_thread, (void *) (intptr_t) csock));
+        threads -> at(thread_count++) = client;
     }
 
     close(lsock);

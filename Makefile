@@ -13,10 +13,14 @@ all: $(TARGET)
 OpenPGP:
 	$(MAKE) -C ../OpenPGP
 
-$(TARGET): client.cpp server.cpp OpenPGP
+user.o: user.h user.cpp OpenPGP
+	$(CXX) $(CFLAGS) -c user.cpp $(LFLAGS)
+
+$(TARGET): client.cpp server.cpp user.o OpenPGP
 	$(CXX) $(CFLAGS) client.cpp $(LFLAGS) -o client
-	$(CXX) $(CFLAGS) server.cpp $(LFLAGS) -o server
+	$(CXX) $(CFLAGS) server.cpp user.o $(LFLAGS) -o server
 
 clean:
 	rm client
 	rm server
+	$(MAKE) -C ../OpenPGP clean

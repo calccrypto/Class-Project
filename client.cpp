@@ -35,20 +35,23 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 
 #include "shared.h"
 
+// help menus shown on client side //////////////////
 const std::map <std::string, std::string> CLIENT_NOT_LOGGED_IN_HELP = {
-    std::pair <std::string, std::string>("help", ""),
-    std::pair <std::string, std::string>("quit", ""),
-    std::pair <std::string, std::string>("login", ""),
-    std::pair <std::string, std::string>("new-account", ""),
+    std::pair <std::string, std::string>("help", ""),                   // show help screen
+    std::pair <std::string, std::string>("quit", ""),                   // stop program
+    std::pair <std::string, std::string>("login", ""),                  // login
+    std::pair <std::string, std::string>("new-account", ""),            // create a new account
 };
 
 const std::map <std::string, std::string> CLIENT_LOGGED_IN_HELP = {
-    std::pair <std::string, std::string>("help", ""),
-    std::pair <std::string, std::string>("change", "username|password"),
-    std::pair <std::string, std::string>("talk", "name"),
-    std::pair <std::string, std::string>("quit", ""),
+    std::pair <std::string, std::string>("help", ""),                   // show help screen
+    std::pair <std::string, std::string>("change", "username|password"),// change username or password
+    std::pair <std::string, std::string>("talk", "name"),               // set up key to talk with another user
+    std::pair <std::string, std::string>("quit", ""),                   // stop program
+    std::pair <std::string, std::string>("logout", ""),                 // log out
     // std::pair <std::string, std::string>("", ""),
 };
+// //////////////////////////////////////////////////
 
 int main(int argc, char * argv[]){
     std::array <uint8_t, 4> ip = LOCALHOST;     // default localhost
@@ -89,57 +92,62 @@ int main(int argc, char * argv[]){
 
     std::cout << "Connected to " << (int) ip[0] << "." << (int) ip[1] << "." << (int) ip[2] << "." << (int) ip[3] << " on port " << port << std::endl;
 
-
-    /*
-        TODO:
-            login/create account
-            simple command line for user input
-    */
-
-    // login, create account or help
-    while (true){
+    bool loggedin = false;
+    bool quit = false;
+    while (!quit){
         std::string input;
-        std::cin >> input;
+        std::cout << "> ";
+        std::getline(std::cin, input);
 
-        if (input == "help"){
-            for(std::pair <std::string, std::string> const & help : CLIENT_NOT_LOGGED_IN_HELP){
+        // these commands work whether or not the user is logged in
+        if (input == "quit"){
+            quit = true;
+        }
+        else if(input == "help"){
+            for(std::pair <std::string, std::string> const & help : loggedin?CLIENT_LOGGED_IN_HELP:CLIENT_NOT_LOGGED_IN_HELP){
                 std::cout << help.first << " " << help.second << std::endl;
             }
         }
-        else if (input == "quit"){
-            return 0;
-        }
-        else if (input == "new-account"){
-            // does not automatically login after finished makng new account
-        }
-        else if(input == "login"){
-            // breaks out of loop after authenticating
-        }
         else{
-            std::cerr << "Error: Unknown input: " << input << std::endl;        
+            std::stringstream tokens; tokens << input;
+            tokens >> input;
+
+            if (loggedin){
+                if (input == "change"){
+                    // change username or password
+                    // send request to KDC for change
+                }
+                else if (input == "talk"){
+                    std::string target;
+                    std::cin >> target;
+                    // send request to KDC to talk to target
+                }
+                else{
+                    std::cerr << "Error: Unknown input: " << input << std::endl;
+                }
+            }
+            else{
+                if (input == "new-account"){
+                    // send request to KDC
+                    // does not automatically login after finished making new account
+                }
+                else if(input == "login"){
+                    // send and receive data
+                    // loggedin = decoded packet
+                }
+                else{
+                    std::cerr << "Error: Unknown input: " << input << std::endl;
+                }
+            }
         }
     }
 
-    // std::string data;
-    // if (!receive_data(csock, data, PACKET_SIZE)){
-        // continue;
-    // }
-    // std::stringstream s; s << data >> data;
-    // if (data == "help"){
-    // }
-    // else if (data == "quit"){
-        // // clean data
-        // // remove thread
-        // return NULL;
-    // }
-    // else if (data == "change"){
-        // // change username or password
+    if (!quit){
+        std::cerr << "Error: Connection lost" << std::endl;
+    }
 
-    // }
-    // else if (data == "talk"){
-
-    // }
-
+    // stop listening to the socket
     close(sock);
+
     return 0;
 }
