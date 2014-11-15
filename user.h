@@ -62,10 +62,10 @@ class User {
         void set_key(const std::string & KEY);
 
         // Accessors
-        uint32_t get_uid();
-        uint64_t get_timeskew();
-        std::string get_name();
-        std::string get_key();
+        uint32_t get_uid() const;
+        uint64_t get_timeskew() const;
+        std::string get_name() const;
+        std::string get_key() const;
 
         // Operators
         User operator=(const User & u);

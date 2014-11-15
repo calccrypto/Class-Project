@@ -1,5 +1,17 @@
 #include "shared.h"
 
+std::string random_octets(const unsigned int count){
+    std::string out = "";
+    while (out.size() < count){
+        unsigned char c = 0;
+        for(uint8_t x = 0; x < 8; x++){
+            c = (c << 1) | (BBS().rand(1) == "1");
+        }
+        out += std::string(1, c);    
+    }
+    return out;
+}
+
 bool send_data(int sock, const std::string & data, const ssize_t & expected_size){
     return (expected_size == send(sock, (void *) data.c_str(), expected_size, 0));
 }
@@ -15,15 +27,10 @@ bool receive_data(int sock, std::string & data, const ssize_t & expected_size){
 }
 
 bool packetize(const uint8_t & type, std::string & packet, const uint32_t & length){
-    BBS(static_cast <PGPMPI> (static_cast <unsigned int> (now()))); // seed just in case not seeded
     packet = unhexlify(makehex(packet.size() + 1, 8)) + std::string(1, type) + packet;
     while (packet.size() < length){
         // pad data with garbage
-        unsigned char c = 0;
-        for(uint8_t x = 0; x < 8; x++){
-            c = (c << 1) | (BBS().rand(1) == "1");
-        }
-        packet += std::string(1, c);
+        packet += random_octets(1); // not subtracting to prevent overflows
     }
     return (packet.size() == length);
 }
@@ -40,9 +47,10 @@ bool unpacketize(std::string & packet, const uint32_t & expected_size){
     return true;
 }
 
-bool pack_and_send(int sock, const uint8_t & type, std::string & packet, const uint32_t & length){
-    if (packetize(type, packet, length)){
-        return send_data(sock, packet, length);
+bool pack_and_send(int sock, const uint8_t & type, const std::string & packet, const uint32_t & length){
+    std::string data = packet;
+    if (packetize(type, data, length)){
+        return send_data(sock, data, length);
     }
     return false;
 }

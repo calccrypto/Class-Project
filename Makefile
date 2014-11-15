@@ -27,11 +27,11 @@ server.o: server.cpp shared.h user.h
 shared.o: shared.h shared.cpp ../OpenPGP/OpenPGP.h
 	$(CXX) $(CFLAGS) -c shared.cpp
 
-$(TARGET): shared.o client.o server.o 
+$(TARGET): shared.o client.o server.o user.o
 	$(CXX) $(CFLAGS) client.o shared.o $(LFLAGS) -o client
 	$(CXX) $(CFLAGS) server.o shared.o user.o $(LFLAGS) -o server
 
 clean:
 	rm client
 	rm server
-	$(MAKE) -C ../OpenPGP clean
+	rm *.o

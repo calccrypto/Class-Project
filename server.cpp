@@ -40,6 +40,7 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 struct client_args{
     int csock;
     std::set <User> & users;
+
     client_args(int cs, std::set <User> & u)
         : csock(cs), users(u) {}
 };
@@ -50,7 +51,7 @@ struct server_args{
     bool & quit;
     std::set <User> & users;
 
-    server_args(pthread_mutex_t & m, std::map <uint32_t, pthread_t> & t, bool & q, std::set <User> & u) 
+    server_args(pthread_mutex_t & m, std::map <uint32_t, pthread_t> & t, bool & q, std::set <User> & u)
         : mutex(m), threads(t), quit(q), users(u) {}
 };
 
@@ -59,8 +60,8 @@ void * client_thread(void * args){
     // copy arguments out
     client_args ca = * (client_args *) args;
     int csock = ca.csock;
-    const std::set <User> & users = ca.users;
-    
+    std::set <User> & users = ca.users;
+
     User * client = NULL;
 
     // accept commands
@@ -85,16 +86,30 @@ void * client_thread(void * args){
                 // // send "unknown command packet"
             // }
         }
-        else{           // if not, only allow for creating account and logging in
+        else{                               // if not logged in, only allow for creating account and logging in
             if (type == LOGIN_PACKET){
                 // get username
                 std::string username = packet.substr(1, packet.size() - 1);
+                User * claim = NULL;
 
                 // search "database" for user
-
                 for(User const & u : users){
-
+                    if (u == username){
+                        *claim = u;
+                        break;
+                    }
                 }
+
+                // person not found in database
+                if (!claim){
+                    if (!pack_and_send(csock, FAIL_PACKET, "Could not find user", PACKET_SIZE)){
+                        std::cerr << "Could not send error message" << std::endl;
+                    }
+                    break;
+                }
+
+                // generate and encrypt session key
+                SYM(claim -> get_key()).encrypt(random_octets(KEY_SIZE >> 3));
 
 
             }
@@ -123,7 +138,7 @@ void * server_thread(void * args){
     pthread_mutex_t & mutex = data.mutex;
     std::map <uint32_t, pthread_t> & clients = data.threads;
     std::set <User> & users = data.users;
-    
+
     // take in and parse commands
     while (true){
         std::string cmd;
@@ -162,6 +177,8 @@ void * server_thread(void * args){
 }
 
 int main(int argc, char * argv[]){
+    BBS(static_cast <PGPMPI> (static_cast <unsigned int> (now())));
+
     uint16_t port = DEFAULT_PORT;               // port to listen on
 
     if (argc == 1);                             // no input port
@@ -253,7 +270,7 @@ int main(int argc, char * argv[]){
             continue;
 
         client_args ca(csock, users);
-            
+
         // start thread
         // keep on trying to create thread
         while (pthread_create(&threads[thread_count++], NULL, client_thread, (void *) &ca));

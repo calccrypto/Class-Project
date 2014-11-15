@@ -18,10 +18,10 @@ User::User(std::string & formatted)
     formatted = formatted.substr(20 + name_len + key_len, formatted.size() - (20 + name_len + key_len));
 }
 
-User::User(const unsigned int & UID, const std::string & NAME, const std::string KEY)
+User::User(const uint32_t & UID, const std::string & NAME, const std::string KEY)
     : uid(UID), name(NAME), key(KEY) {}
 
-void User::set_uid(const unsigned int & UID){
+void User::set_uid(const uint32_t & UID){
     uid = UID;
 }
 
@@ -37,19 +37,19 @@ void User::set_key(const std::string & KEY){
     key = KEY;
 }
 
-unsigned int User::get_uid(){
+unsigned int User::get_uid() const {
     return uid;
 }
 
-uint64_t User::get_timeskew(){
+uint64_t User::get_timeskew() const {
     return timeskew;
 }
 
-std::string User::get_name(){
+std::string User::get_name() const {
     return name;
 }
 
-std::string User::get_key(){
+std::string User::get_key() const {
     return key;
 }
 
@@ -61,19 +61,19 @@ User User::operator=(const User & u){
     return *this;
 }
 
-bool User::operator==(const std::string & u){
+bool User::operator==(const std::string & u) const {
     return (name == u);
 }
 
-bool User::operator==(const User & u) const{
+bool User::operator==(const User & u) const {
     return ((uid == u.uid) && (name == u.name) && (key == u.key));
 }
 
-bool User::operator!=(const User & u) const{
+bool User::operator!=(const User & u) const {
     return !(*this == u);
 }
 
-bool User::operator<(const User & u) const{
+bool User::operator<(const User & u) const {
     if (name < u.name){
         return true;
     }
@@ -83,7 +83,7 @@ bool User::operator<(const User & u) const{
     return false;
 }
 
-std::string User::str() const{
+std::string User::str() const {
     return unhexlify(makehex(uid, 8)) + unhexlify(makehex(timeskew, 16)) + unhexlify(makehex(name.size(), 8)) + name + unhexlify(makehex(key.size(), 8)) + key;
 }
 

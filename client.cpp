@@ -36,7 +36,6 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include "shared.h"
 #include "../OpenPGP/OpenPGP.h" // Hashes
 
-
 // help menus shown on client side //////////////////
 const std::map <std::string, std::string> CLIENT_NOT_LOGGED_IN_HELP = {
     std::pair <std::string, std::string>("help", ""),                               // show help screen
@@ -56,6 +55,8 @@ const std::map <std::string, std::string> CLIENT_LOGGED_IN_HELP = {
 // //////////////////////////////////////////////////
 
 int main(int argc, char * argv[]){
+    BBS(static_cast <PGPMPI> (static_cast <unsigned int> (now())));
+
     std::array <uint8_t, 4> ip = LOCALHOST;     // default localhost
     uint16_t port = DEFAULT_PORT;               // port to send data on
 
@@ -95,7 +96,7 @@ int main(int argc, char * argv[]){
     std::cout << "Connected to " << (int) ip[0] << "." << (int) ip[1] << "." << (int) ip[2] << "." << (int) ip[3] << " on port " << port << std::endl;
 
     send(sock, "HELLO", 5, 0);
-    
+
     bool loggedin = false;
     bool quit = false;
     while (!quit){
@@ -154,9 +155,15 @@ int main(int argc, char * argv[]){
                         // client transforms password into key
                         std::string KA = MD5(password).digest();
 
+                        // receive first reply
+                        std::string packet;
+                        if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
+                            std::cerr << "Error: Received bad packet" << std::endl;
+                            break;
+                        }
 
-
-                        // send and receive data
+                        if (packet[0] == FAIL_PACKET)
+                        
                         // loggedin = decoded packet
                     }
                     else{
