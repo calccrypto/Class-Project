@@ -34,21 +34,23 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include <iostream>
 
 #include "shared.h"
+#include "../OpenPGP/OpenPGP.h" // Hashes
+
 
 // help menus shown on client side //////////////////
 const std::map <std::string, std::string> CLIENT_NOT_LOGGED_IN_HELP = {
-    std::pair <std::string, std::string>("help", ""),                   // show help screen
-    std::pair <std::string, std::string>("quit", ""),                   // stop program
-    std::pair <std::string, std::string>("login", ""),                  // login
-    std::pair <std::string, std::string>("new-account", ""),            // create a new account
+    std::pair <std::string, std::string>("help", ""),                               // show help screen
+    std::pair <std::string, std::string>("quit", ""),                               // stop program
+    std::pair <std::string, std::string>("login", ""),                              // login
+    std::pair <std::string, std::string>("new-account", ""),                        // create a new account
 };
 
 const std::map <std::string, std::string> CLIENT_LOGGED_IN_HELP = {
-    std::pair <std::string, std::string>("help", ""),                   // show help screen
-    std::pair <std::string, std::string>("change", "username|password"),// change username or password
-    std::pair <std::string, std::string>("talk", "name"),               // set up key to talk with another user
-    std::pair <std::string, std::string>("quit", ""),                   // stop program
-    std::pair <std::string, std::string>("logout", ""),                 // log out
+    std::pair <std::string, std::string>("help", ""),                               // show help screen
+    std::pair <std::string, std::string>("change", "username|password|timeskew"),   // change username, password, or timeskew
+    std::pair <std::string, std::string>("talk", "name"),                           // set up key to talk with another user
+    std::pair <std::string, std::string>("quit", ""),                               // stop program
+    std::pair <std::string, std::string>("logout", ""),                             // log out
     // std::pair <std::string, std::string>("", ""),
 };
 // //////////////////////////////////////////////////
@@ -101,6 +103,7 @@ int main(int argc, char * argv[]){
 
         // these commands work whether or not the user is logged in
         if (input == "quit"){
+            loggedin = false;
             quit = true;
         }
         else if(input == "help"){
@@ -122,6 +125,9 @@ int main(int argc, char * argv[]){
                     std::cin >> target;
                     // send request to KDC to talk to target
                 }
+                else if (input == "logout"){
+                    loggedin = false;
+                }
                 else{
                     std::cerr << "Error: Unknown input: " << input << std::endl;
                 }
@@ -132,6 +138,16 @@ int main(int argc, char * argv[]){
                     // does not automatically login after finished making new account
                 }
                 else if(input == "login"){
+                    std::string username, password;
+                    std::cout << "Username: ";
+                    std::cin >> username;
+                    std::cout << "Password: ";
+                    std::cin >> password;
+
+                    std::string KA = MD5(password).digest();
+
+                    // if (!send_data(sock, KA, 
+                    
                     // send and receive data
                     // loggedin = decoded packet
                 }

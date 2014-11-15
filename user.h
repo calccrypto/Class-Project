@@ -35,12 +35,14 @@ Header file for User class of Kerberos project
 class User {
     private:
         uint32_t uid;           // some unique identifier
+        uint64_t timeskew;      // amount of time allowed between creation of a packet and receiving it
         std::string name;       // username
         std::string key;        // key shared between user and KDC
 
         /*
             Formatted string:
                 4 octets: uid
+                8 octets: timeskew
                 4 octets: N = name.size()
                 N octets: name
                 4 octets: K = key.size()
@@ -55,14 +57,16 @@ class User {
 
         // Modifiers
         void set_uid(const uint32_t & UID);
+        void set_timeskew(const uint64_t & DELTA_T);
         void set_name(const std::string & NAME);
         void set_key(const std::string & KEY);
 
         // Accessors
         uint32_t get_uid();
+        uint64_t get_timeskew();
         std::string get_name();
         std::string get_key();
-        
+
         // Operators
         User operator=(const User & u);
         bool operator==(const User & u) const;
@@ -73,6 +77,6 @@ class User {
         std::string str() const;      // returns formatted string
 };
 
-std::ostream & operator<<(std::ostream & stream, const User & u); 
+std::ostream & operator<<(std::ostream & stream, const User & u);
 
 #endif

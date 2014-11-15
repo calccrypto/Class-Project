@@ -23,7 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-Functions used by client and server
+Things used by both client and server
     - networking
     - global values
 
@@ -46,28 +46,37 @@ file for full license.
 #include <map>
 #include <sstream>
 
-#include "../OpenPGP/PGP.h"
+#include "../OpenPGP/OpenPGP.h" // Encryptions and Hashes
 
-const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1};
+const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1};       // 127.0.0.1
 const uint16_t DEFAULT_PORT = 45678;                            // Ephemeral port
-const unsigned int PACKET_SIZE = 1024;                          // 1024 octets
+const uint32_t PACKET_SIZE = 1024;                              // 1024 octets
+const uint32_t TIME_SKEW = 300000;                              // milliseconds (5 minutes)            
 
-// typedef SYM  AES;
-// typedef HASH SHA256;
-// const unsigned int DIGEST_SIZE = HASH().digestsize();
+typedef AES SYM;                                                // default symmetric key algorithm
+const unsigned int BLOCK_SIZE = SYM().blocksize();              // symmetric key algorithm blocksize (bits)
+typedef SHA256 HASH;                                            // default hashing algorithm
+const unsigned int DIGEST_SIZE = HASH().digestsize();           // hashing algorithm output size (bits)
+
+// Packet types
+const uint8_t CREATE_ACCOUNT_PACKET = 0;
+const uint8_t LOGIN_PACKET          = 1;
+const uint8_t TGT_PACKET            = 2;
+const uint8_t REQUEST_PACKET        = 3;
+const uint8_t AUTHENTICATOR_PACKET  = 4;
+const uint8_t TALK_PACKET           = 5;
+// const uint8_t _PACKET = 6;
 
 // send data and check if it was sent properly
-bool send_data(int sock, const std::string & data, const ssize_t & expected_size){
-    return (expected_size == send(sock, (void *) data.c_str(), expected_size, 0));
-}
+bool send_data(int sock, const std::string & data, const ssize_t & expected_size);
 
 // receive data and check if all was received properly
-bool receive_data(int sock, std::string & data, const ssize_t & expected_size){
-    char * in = new char[expected_size];
-    bool out = (expected_size != recv(sock, in, expected_size, 0));
-    if (out){
-        data = std::string(in, expected_size);
-    }
-    delete[] in;
-    return out;
-}
+bool receive_data(int sock, std::string & data, const ssize_t & expected_size);
+
+
+// Takes some data and adds a 4 octet length to the front and pads the rest of the packet with garbage
+// returns 0 if input packet was too long
+bool packetize(const uint8_t & type, std::string & packet, const uint32_t length);
+
+// Takes packetized data and returns top packet type + data
+uint8_t unpacketize(std::string & packet);

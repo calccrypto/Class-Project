@@ -232,7 +232,7 @@ int main(int argc, char * argv[]){
     std::cout << "Listening on socket." << std::endl << std::endl;
 
     pthread_mutex_t * mutex = new pthread_mutex_t;                                      // global mutex
-    std::map <uint32_t, pthread_t> * threads = new std::map <uint32_t, pthread_t> ();    // list of running threads
+    std::map <uint32_t, pthread_t> * threads = new std::map <uint32_t, pthread_t> ();   // list of running threads
     bool * quit = new bool (false);
     server_args s_args(mutex, threads, quit);
 
