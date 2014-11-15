@@ -30,6 +30,7 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 */
 
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <iostream>
 
@@ -162,8 +163,17 @@ int main(int argc, char * argv[]){
                             break;
                         }
 
-                        if (packet[0] == FAIL_PACKET)
+                        if (packet[0] == FAIL_PACKET){
+                            std::cerr << "Error: Username " << username << " not found." << std::endl;
+                            break;
+                        }
                         
+                        if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
+                            std::cerr << "Error: Failed to receive TGT." << std::endl;
+                            break;
+                        }
+                        
+
                         // loggedin = decoded packet
                     }
                     else{

@@ -37,6 +37,9 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include "shared.h"
 #include "user.h"
 
+// move this to file or something
+const std::string secret_key = HASH("SUPER SECRET KEY").digest();
+
 struct client_args{
     int csock;
     std::set <User> & users;
@@ -103,13 +106,25 @@ void * client_thread(void * args){
                 // person not found in database
                 if (!claim){
                     if (!pack_and_send(csock, FAIL_PACKET, "Could not find user", PACKET_SIZE)){
-                        std::cerr << "Could not send error message" << std::endl;
+                        std::cerr << "Error: Could not send error message" << std::endl;
                     }
                     break;
                 }
 
                 // generate and encrypt session key
-                SYM(claim -> get_key()).encrypt(random_octets(KEY_SIZE >> 3));
+                if (!pack_and_send(csock, MESSAGE1_PACKET, SYM(claim -> get_key()).encrypt(random_octets(KEY_SIZE >> 3)), PACKET_SIZE)){
+                    std::cerr << "Error: Could not send session key." << std::endl;
+                    break;
+                }
+                
+                // send TGT
+                
+                
+                if (!pack_and_send(csock, MESSAGE2_PACKET, SYM(claim -> get_key()).encrypt(random_octets(KEY_SIZE >> 3)), PACKET_SIZE)){
+                    std::cerr << "Error: Could not send session key." << std::endl;
+                    break;
+                }
+                
 
 
             }

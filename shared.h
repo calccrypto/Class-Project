@@ -54,7 +54,7 @@ const uint32_t PACKET_SIZE = 1024;                           // 1024 octets
 const uint32_t TIME_SKEW = 300000;                           // milliseconds (5 minutes)            
 
 typedef AES SYM;                                             // default symmetric key algorithm
-const unsigned int KEY_SIZE = 128;                           // symmetric key algorithm key size (bits)
+const unsigned int KEY_SIZE = 256;                           // symmetric key algorithm key size (bits)
 const unsigned int BLOCK_SIZE = SYM().blocksize();           // symmetric key algorithm block size (bits)
 typedef SHA256 HASH;                                         // default hashing algorithm
 const unsigned int DIGEST_SIZE = HASH().digestsize();        // hashing algorithm output size (bits)
@@ -64,11 +64,13 @@ const uint8_t QUIT_PACKET           = 0;                     // no payload
 const uint8_t FAIL_PACKET           = 1;                     // message (?)
 const uint8_t CREATE_ACCOUNT_PACKET = 2;                     // username
 const uint8_t LOGIN_PACKET          = 3;                     // username
-const uint8_t SESSION_KEY_PACKET    = 4;                     // encrypted session key
-const uint8_t TGT_PACKET            = 5;                     // 
-const uint8_t REQUEST_PACKET        = 6;                     //
-const uint8_t AUTHENTICATOR_PACKET  = 7;                     //
-const uint8_t TALK_PACKET           = 8;                     //
+const uint8_t MESSAGE1_PACKET       = 4;                     // login packet 1    
+const uint8_t MESSAGE2_PACKET       = 5;                     // login packet 2
+const uint8_t SESSION_KEY_PACKET    = 6;                     // encrypted session key
+const uint8_t TGT_PACKET            = 7;                     // 
+const uint8_t REQUEST_PACKET        = 8;                     //
+const uint8_t AUTHENTICATOR_PACKET  = 9;                     //
+const uint8_t TALK_PACKET           = 10;                    //
 // const uint8_t ENCRYPTED_PACKET      = 9;                     //
 // const uint8_t _PACKET = ;
 
