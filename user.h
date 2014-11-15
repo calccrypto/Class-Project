@@ -69,6 +69,7 @@ class User {
 
         // Operators
         User operator=(const User & u);
+        bool operator==(const std::string & u) const;
         bool operator==(const User & u) const;
         bool operator!=(const User & u) const;
         bool operator<(const User & u) const;

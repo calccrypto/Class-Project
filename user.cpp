@@ -1,10 +1,10 @@
 #include "user.h"
 
 User::User()
-    : uid(0), name(""), key("") {}
+    : uid(0), timeskew(0), name(""), key("") {}
 
 User::User(const User & u)
-    : uid(u.uid), name(u.name), key(u.key) {
+    : uid(u.uid), timeskew(u.timeskew), name(u.name), key(u.key) {
 }
 
 User::User(std::string & formatted)
@@ -55,9 +55,14 @@ std::string User::get_key(){
 
 User User::operator=(const User & u){
     uid = u.uid;
+    timeskew = u.timeskew;
     name = u.name;
     key = u.key;
     return *this;
+}
+
+bool User::operator==(const std::string & u){
+    return (name == u);
 }
 
 bool User::operator==(const User & u) const{
@@ -69,11 +74,11 @@ bool User::operator!=(const User & u) const{
 }
 
 bool User::operator<(const User & u) const{
-    if (uid < u.uid){
+    if (name < u.name){
         return true;
     }
-    else if (uid == u.uid){
-        return (name < u.name);
+    else if (name == u.name){
+        return (uid < u.uid);
     }
     return false;
 }

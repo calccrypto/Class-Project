@@ -59,24 +59,30 @@ typedef SHA256 HASH;                                            // default hashi
 const unsigned int DIGEST_SIZE = HASH().digestsize();           // hashing algorithm output size (bits)
 
 // Packet types
-const uint8_t CREATE_ACCOUNT_PACKET = 0;
-const uint8_t LOGIN_PACKET          = 1;
-const uint8_t TGT_PACKET            = 2;
-const uint8_t REQUEST_PACKET        = 3;
-const uint8_t AUTHENTICATOR_PACKET  = 4;
-const uint8_t TALK_PACKET           = 5;
+const uint8_t QUIT_PACKET           = 0;
+const uint8_t FAIL_PACKET           = 1;
+const uint8_t CREATE_ACCOUNT_PACKET = 2;
+const uint8_t LOGIN_PACKET          = 3;
+const uint8_t TGT_PACKET            = 4;
+const uint8_t REQUEST_PACKET        = 5;
+const uint8_t AUTHENTICATOR_PACKET  = 6;
+const uint8_t TALK_PACKET           = 7;
+const uint8_t ENCRYPTED_PACKET      = 8;
 // const uint8_t _PACKET = 6;
 
 // send data and check if it was sent properly
-bool send_data(int sock, const std::string & data, const ssize_t & expected_size);
+bool send_data(int sock, const std::string & data, const ssize_t & expected_size = PACKET_SIZE);
 
 // receive data and check if all was received properly
-bool receive_data(int sock, std::string & data, const ssize_t & expected_size);
+bool receive_data(int sock, std::string & data, const ssize_t & expected_size = PACKET_SIZE);
 
 
 // Takes some data and adds a 4 octet length to the front and pads the rest of the packet with garbage
 // returns 0 if input packet was too long
-bool packetize(const uint8_t & type, std::string & packet, const uint32_t length);
+bool packetize(const uint8_t & type, std::string & packet, const uint32_t & length = PACKET_SIZE);
 
 // Takes packetized data and returns top packet type + data
-uint8_t unpacketize(std::string & packet);
+bool unpacketize(std::string & packet, const uint32_t & expected_size = PACKET_SIZE);
+
+bool pack_and_send(int sock, const uint8_t & type, std::string & packet, const uint32_t & length);
+bool recv_and_unpack(int sock, std::string & packet, const uint32_t & expected_size = PACKET_SIZE);

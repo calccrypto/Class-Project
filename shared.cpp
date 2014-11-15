@@ -14,7 +14,7 @@ bool receive_data(int sock, std::string & data, const ssize_t & expected_size){
     return out;
 }
 
-bool packetize(const uint8_t & type, std::string & packet, const uint32_t length){
+bool packetize(const uint8_t & type, std::string & packet, const uint32_t & length){
     BBS(static_cast <PGPMPI> (static_cast <unsigned int> (now()))); // seed just in case not seeded
     packet = unhexlify(makehex(packet.size() + 1, 8)) + std::string(1, type) + packet;
     while (packet.size() < length){
@@ -28,9 +28,28 @@ bool packetize(const uint8_t & type, std::string & packet, const uint32_t length
     return (packet.size() == length);
 }
 
-uint8_t unpacketize(std::string & packet){
+bool unpacketize(std::string & packet, const uint32_t & expected_size){
+    if (packet.size() != expected_size){
+        return false;
+    }
     uint32_t length = toint(packet.substr(0, 4), 256);
-    uint8_t out = packet[5];
-    packet = packet.substr(5, length - 1);
-    return out;
+    if (length > (expected_size - 4)){
+        return false;
+    }
+    packet = packet.substr(4, length);
+    return true;
+}
+
+bool pack_and_send(int sock, const uint8_t & type, std::string & packet, const uint32_t & length){
+    if (packetize(type, packet, length)){
+        return send_data(sock, packet, length);
+    }
+    return false;
+}
+
+bool recv_and_unpack(int sock, std::string & packet, const uint32_t & expected_size){
+    if (receive_data(sock, packet, expected_size)){
+        return unpacketize(packet, expected_size);
+    }
+    return false;
 }

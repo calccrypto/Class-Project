@@ -37,37 +37,48 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include "shared.h"
 #include "user.h"
 
-struct server_args{
-    pthread_mutex_t *& mutex;
-    std::map <uint32_t, pthread_t> *& threads;
-    bool *& quit;
+struct client_args{
+    int csock;
+    std::set <User> & users;
+    client_args(int cs, std::set <User> & u)
+        : csock(cs), users(u) {}
+};
 
-    server_args(pthread_mutex_t *& m, std::map <uint32_t, pthread_t> *& t, bool *& q) : mutex(m), threads(t), quit(q) {}
+struct server_args{
+    pthread_mutex_t & mutex;
+    std::map <uint32_t, pthread_t> & threads;
+    bool & quit;
+    std::set <User> & users;
+
+    server_args(pthread_mutex_t & m, std::map <uint32_t, pthread_t> & t, bool & q, std::set <User> & u) 
+        : mutex(m), threads(t), quit(q), users(u) {}
 };
 
 // stuff the user sees
 void * client_thread(void * args){
-    std::cout << "Thread " << pthread_self() << " started" << std::endl;
-    int csock = * (intptr_t *) args;
+    // copy arguments out
+    client_args ca = * (client_args *) args;
+    int csock = ca.csock;
+    const std::set <User> & users = ca.users;
+    
+    User * client = NULL;
 
     // accept commands
-    std::string data;
-    bool loggedin = false;
-    while (receive_data(csock, data, PACKET_SIZE)){
-        // decrypt data
-
-        // put data into stringstream
-        std::stringstream s; s << data;
+    std::string packet;
+    while (recv_and_unpack(csock, packet, PACKET_SIZE)){
+        // get packet type
+        uint8_t type = packet[0];
 
         // quit works no matter what
-        if (data == "quit"){
+        if (type == QUIT_PACKET){
             // clean up data
-            loggedin = false;
+            delete client;
+            client = NULL;
             return NULL;
         }
 
         // parse input
-        if (loggedin){  // if identity is established
+        if (client){  // if identity is established
             // if (data == "talk"){}
             // else if (data == ""){}
             // else{
@@ -75,25 +86,19 @@ void * client_thread(void * args){
             // }
         }
         else{           // if not, only allow for creating account and logging in
-            if (data == "login"){
-                // login
-                std::string username = "Username: ", password = "Password: ";
-                if (!send_data(csock, username, 10)){
-                    return NULL;
-                }
-                if (!receive_data(csock, username, PACKET_SIZE)){
-                    return NULL;
-                }
-                if (!!send_data(csock, password, 10)){
-                    return NULL;
-                }
-                if (!receive_data(csock, password, PACKET_SIZE)){
-                    return NULL;
+            if (type == LOGIN_PACKET){
+                // get username
+                std::string username = packet.substr(1, packet.size() - 1);
+
+                // search "database" for user
+
+                for(User const & u : users){
+
                 }
 
-                // loggedin = true;
+
             }
-            else if (data == "new-account"){
+            else if (type == CREATE_ACCOUNT_PACKET){
                 // create new account
             }
             else{
@@ -113,35 +118,12 @@ const std::map <std::string, std::string> SERVER_HELP = {
 
 // admin command line
 void * server_thread(void * args){
+    // copy arguments out
     server_args data = * (server_args *) args;
-    pthread_mutex_t * mutex = data.mutex;
-    std::map <uint32_t, pthread_t> * clients = data.threads;
-
-    // open (and decrypt) user list
-    std::set <User> users;
-    std::ifstream user_file("users", std::ios::in | std::ios::binary);
-    if (user_file){ // if user file exists
-        // read from it
-        std::stringstream s; s << user_file.rdbuf();
-        std::string user_data = s.str();
-
-        // check encrypted checksum
-
-        // copy current data to backup (after checking that current file is good)
-        std::ofstream backup("users.back", std::ios::binary);
-        backup << user_data;
-
-        // decrypt data
-        // check checksum
-
-        // copy data into memory
-        while (user_data.size()){
-            users.emplace(User(user_data));
-        }
-
-        user_file.close(); // force the file to close
-    }
-
+    pthread_mutex_t & mutex = data.mutex;
+    std::map <uint32_t, pthread_t> & clients = data.threads;
+    std::set <User> & users = data.users;
+    
     // take in and parse commands
     while (true){
         std::string cmd;
@@ -156,9 +138,9 @@ void * server_thread(void * args){
             }
             else if (cmd == "stop"){
                 uint32_t tid;
-                if ((s >> tid) && (clients -> find(tid) != clients -> end())){
-                    pthread_cancel(clients -> at(tid));   // not safe (?)
-                    clients -> erase(tid);
+                if ((s >> tid) && (clients.find(tid) != clients.end())){
+                    pthread_cancel(clients.at(tid));   // not safe (?)
+                    clients.erase(tid);
                 }
             }
             else if (cmd == "quit"){     // stop server
@@ -170,21 +152,11 @@ void * server_thread(void * args){
 
     // terminate threads
     // while (clients.size()){
-        // pthread_cancel(clients.begin() -> second);  // not safe (?)
-        // clients.erase(clients.begin() -> first);
+        // pthread_cancel(clients.begin().second);  // not safe (?)
+        // clients.erase(clients.begin().first);
     // }
 
-    // write user list to file
-    std::ofstream save("user", std::ios::binary);
-    for(User const & u : users){
-        save << u;
-    }
-
-    // write to backup
-    std::ofstream backup("user.back", std::ios::binary);
-    backup << save.rdbuf();
-
-    *data.quit = true;
+    data.quit = true;
 
     return NULL;
 }
@@ -231,12 +203,40 @@ int main(int argc, char * argv[]){
     }
     std::cout << "Listening on socket." << std::endl << std::endl;
 
-    pthread_mutex_t * mutex = new pthread_mutex_t;                                      // global mutex
-    std::map <uint32_t, pthread_t> * threads = new std::map <uint32_t, pthread_t> ();   // list of running threads
-    bool * quit = new bool (false);
-    server_args s_args(mutex, threads, quit);
 
-    // start administrator command line
+    // open (and decrypt) user list
+    std::set <User> users;
+    std::ifstream user_file("users", std::ios::binary);
+    if (user_file){ // if user file exists
+        // read from it
+        std::stringstream s; s << user_file.rdbuf();
+        std::string user_data = s.str();
+
+        // check encrypted checksum
+
+        // copy current data to backup (after checking that current file is good)
+        std::ofstream backup("users.back", std::ios::binary);
+        backup << user_data;
+
+        // decrypt data
+        // check checksum
+
+        // copy data into memory
+        while (user_data.size()){
+            users.emplace(User(user_data));
+        }
+
+        user_file.close(); // force the file to close
+    }
+
+
+    // put together variables to pass into administrator thread
+    pthread_mutex_t mutex;                                      // global mutex
+    std::map <uint32_t, pthread_t> threads;   // list of running threads
+    bool quit = false;
+    server_args s_args(mutex, threads, quit, users);
+
+    // start administrator command line thread
     pthread_t admin;
     if (pthread_create(&admin, NULL, server_thread, (void *) &s_args) != 0){
         std::cerr << "Unable to start administrator command line" << std::endl;
@@ -244,20 +244,31 @@ int main(int argc, char * argv[]){
     }
 
     uint32_t thread_count = 0;
-    while (!*quit){
-        // listen for client connectionscd ..
+    while (!quit){
+        // listen for client connection
         sockaddr_in unused;
         socklen_t size = sizeof(unused);
-        int csock = accept4(lsock, reinterpret_cast<sockaddr*>(&unused), &size, O_NONBLOCK);
+        int csock = accept(lsock, reinterpret_cast<sockaddr*>(&unused), &size);
         if(csock < 0)    //bad client, skip it
             continue;
 
+        client_args ca(csock, users);
+            
         // start thread
-        pthread_t client;
         // keep on trying to create thread
-        while (pthread_create(&client, NULL, client_thread, (void *) (intptr_t) csock));
-        threads -> at(thread_count++) = client;
+        while (pthread_create(&threads[thread_count++], NULL, client_thread, (void *) &ca));
+        std::cout << "Thread " << thread_count << " started." << std::endl;
     }
+
+    // write user list to file
+    std::ofstream save("user", std::ios::binary);
+    for(User const & u : users){
+        save << u;
+    }
+
+    // write to backup
+    std::ofstream backup("user.back", std::ios::binary);
+    backup << save.rdbuf();
 
     close(lsock);
     return 0;

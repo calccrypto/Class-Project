@@ -27,7 +27,7 @@ server.o: server.cpp shared.h user.h
 shared.o: shared.h shared.cpp ../OpenPGP/OpenPGP.h
 	$(CXX) $(CFLAGS) -c shared.cpp
 
-$(TARGET): OpenPGP shared.o client.o server.o 
+$(TARGET): shared.o client.o server.o 
 	$(CXX) $(CFLAGS) client.o shared.o $(LFLAGS) -o client
 	$(CXX) $(CFLAGS) server.o shared.o user.o $(LFLAGS) -o server
 

@@ -94,6 +94,8 @@ int main(int argc, char * argv[]){
 
     std::cout << "Connected to " << (int) ip[0] << "." << (int) ip[1] << "." << (int) ip[2] << "." << (int) ip[3] << " on port " << port << std::endl;
 
+    send(sock, "HELLO", 5, 0);
+    
     bool loggedin = false;
     bool quit = false;
     while (!quit){
@@ -113,46 +115,53 @@ int main(int argc, char * argv[]){
         }
         else{
             std::stringstream tokens; tokens << input;
-            tokens >> input;
-
-            if (loggedin){
-                if (input == "change"){
-                    // change username or password
-                    // send request to KDC for change
-                }
-                else if (input == "talk"){
-                    std::string target;
-                    std::cin >> target;
-                    // send request to KDC to talk to target
-                }
-                else if (input == "logout"){
-                    loggedin = false;
-                }
-                else{
-                    std::cerr << "Error: Unknown input: " << input << std::endl;
-                }
-            }
-            else{
-                if (input == "new-account"){
-                    // send request to KDC
-                    // does not automatically login after finished making new account
-                }
-                else if(input == "login"){
-                    std::string username, password;
-                    std::cout << "Username: ";
-                    std::cin >> username;
-                    std::cout << "Password: ";
-                    std::cin >> password;
-
-                    std::string KA = MD5(password).digest();
-
-                    // if (!send_data(sock, KA, 
-                    
-                    // send and receive data
-                    // loggedin = decoded packet
+            if (tokens >> input){
+                if (loggedin){
+                    if (input == "change"){
+                        // change username or password
+                        // send request to KDC for change
+                    }
+                    else if (input == "talk"){
+                        std::string target;
+                        std::cin >> target;
+                        // send request to KDC to talk to target
+                    }
+                    else if (input == "logout"){
+                        loggedin = false;
+                    }
+                    else{
+                        std::cerr << "Error: Unknown input: " << input << std::endl;
+                    }
                 }
                 else{
-                    std::cerr << "Error: Unknown input: " << input << std::endl;
+                    if (input == "new-account"){
+                        // send request to KDC
+                        // does not automatically login after finished making new account
+                    }
+                    else if(input == "login"){
+                        // user enters username and password
+                        std::string username, password;
+                        std::cout << "Username: ";
+                        std::cin >> username;
+                        std::cout << "Password: ";
+                        std::cin >> password;   // should hide input
+
+                        if (!pack_and_send(sock, LOGIN_PACKET, username, PACKET_SIZE)){
+                            std::cerr << "Error: Request for TGT failed" << std::endl;
+                            continue;
+                        }
+
+                        // client transforms password into key
+                        std::string KA = MD5(password).digest();
+
+
+
+                        // send and receive data
+                        // loggedin = decoded packet
+                    }
+                    else{
+                        std::cerr << "Error: Unknown input: " << input << std::endl;
+                    }
                 }
             }
         }
