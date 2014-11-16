@@ -27,6 +27,9 @@ bool recv_data(int sock, std::string & data, const ssize_t & expected_size){
 }
 
 bool packetize(const uint8_t & type, std::string & packet, const uint32_t & length){
+    if (packet.size() > (length - PACKET_HEADER_SIZE - PACKET_SIZE_INDICATOR)){
+        return false;
+    }
     packet = unhexlify(makehex(packet.size() + 1, 8)) + std::string(1, type) + packet;
     packet = (packet + random_octets(length)).substr(0, length);
     return true;
@@ -36,11 +39,11 @@ bool unpacketize(std::string & packet, const uint32_t & expected_size){
     if (packet.size() != expected_size){
         return false;
     }
-    uint32_t length = toint(packet.substr(0, 4), 256);
-    if (length > (expected_size - 4)){
+    uint32_t length = toint(packet.substr(0, PACKET_SIZE_INDICATOR), 256);
+    if (length > (expected_size - PACKET_SIZE_INDICATOR)){
         return false;
     }
-    packet = packet.substr(4, length);
+    packet = packet.substr(PACKET_SIZE_INDICATOR, length);
     return true;
 }
 

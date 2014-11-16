@@ -140,13 +140,117 @@ int main(int argc, char * argv[]){
                     }
                 }
                 else{
+                    std::string username, password;
                     if (input == "new-account"){
+                        std::cout << "New account username: ";
+                        std::cin >> username;
+                        std::cout << "New account password: ";
+                        std::cin >> password;   // should hide input
+
+                        // // confirm password
+                        // std::string confirm;
+                        // std::cout << "Please re-enter password: ";
+                        // std::cin >> confirm;   // should hide input
+
+                        // if (password != confirm){
+                            // std::cerr << "Error: Passwords do not match" << std::endl;
+                            // continue;
+                        // }
+
                         // send request to KDC
+                        if (!pack_and_send(sock, CREATE_ACCOUNT_PACKET, username, PACKET_SIZE)){
+                            std::cerr << "Error: Could not send request for new account" << std::endl;
+                            continue;
+                        }
+
+                        std::cout << "Request sent to KDC" << std::endl;
+                        
+                        // recieve failure message or public key
+                        std::string packet;
+                        if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
+                            std::cerr << "Error: Received bad data" << packet << std::endl;
+                            continue;
+                        }
+                        
+                        std::cout << "Public key started" << std::endl;
+
+                        uint8_t type = packet[0];
+                        packet = packet.substr(1, packet.size() - 1);
+
+                        std::string pub_str = "";
+
+                        if (type == PUBLIC_KEY_PACKET){
+                            if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
+                                std::cerr << "Error: Received bad data" << std::endl;
+                                continue;
+                            }
+                            pub_str = packet;
+
+                        }
+                        else if (type == START_PARTIAL_PACKET){
+                            // receive partial packet begin
+                            pub_str = packet;
+
+                            // receive partial packets
+                            while (type != END_PARTIAL_PACKET){
+                                if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
+                                    std::cerr << "Error: Failed to receive partial packet" << std::endl;
+                                    continue;
+                                }
+
+                                type = packet[0];
+                                packet = packet.substr(1, packet.size() - 1);
+
+                                if ((type == PARTIAL_PACKET) || (type == END_PARTIAL_PACKET)){
+                                    pub_str += packet;
+                                }
+                                else if (type == FAIL_PACKET){
+                                    std::cerr << packet << std::endl;
+                                    break;
+                                }
+                                else{
+                                    std::cerr << "Error: Unexpected packet type received." << std::endl;
+                                    break;
+                                }
+                            }
+
+                            if (type != END_PARTIAL_PACKET){
+                                std::cerr << "Error: Failed to receive ending partial packet" << std::endl;
+                                continue;
+                            }
+                        }
+                        else if (type == FAIL_PACKET){
+                            std::cerr << packet << std::endl;
+                            continue;
+                        }
+                        else{
+                            std::cerr << "Error: Unexpected packet type received." << std::endl;
+                        }
+
+                        std::cout << "public key received" << std::endl;
+                        
+                        // have KDC public key
+                        PGPPublicKey pub(pub_str);
+
+                        // tell server it was recieved
+                        if (!verify_key(pub, pub)){
+                            std::cerr << "Error: Key was not signed with given signature packet" << std::endl;
+                            if (!pack_and_send(sock, FAIL_PACKET, "Error: Public key self check failed", PACKET_SIZE)){
+                                std::cerr << "Error: Could not send request for new account" << std::endl;
+                            }
+                            continue;
+                        }
+                        else{
+                            if (!pack_and_send(sock, SUCCESS_PACKET, "Public key self check passed", PACKET_SIZE)){
+                                std::cerr << "Error: Could not send verification message" << std::endl;
+                                continue;
+                            }
+                        }
+
                         // does not automatically login after finished making new account
                     }
                     else if(input == "login"){
                         // user enters username and password
-                        std::string username, password;
                         std::cout << "Username: ";
                         std::cin >> username;
                         std::cout << "Password: ";
@@ -177,7 +281,7 @@ int main(int argc, char * argv[]){
                             continue;
                         }
                         else{
-                            std::cerr << "Error: Received bad packet" << std::endl;
+                            std::cerr << "Error: Unexpected packet type received." << std::endl;
                             continue;
                         }
 
@@ -194,7 +298,7 @@ int main(int argc, char * argv[]){
                             continue;
                         }
                         else{
-                            std::cerr << "Error: Received bad packet" << std::endl;
+                            std::cerr << "Error: Unexpected packet type received." << std::endl;
                             continue;
                         }
 

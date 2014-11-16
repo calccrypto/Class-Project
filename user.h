@@ -34,7 +34,7 @@ Header file for User class of Kerberos project
 
 class User {
     private:
-        uint32_t uid;           // some unique identifier
+        // uint32_t uid;           // some unique identifier
         uint64_t timeskew;      // amount of time allowed between creation of a packet and receiving it
         std::string name;       // username
         std::string key;        // key shared between user and KDC
@@ -53,16 +53,16 @@ class User {
         User();
         User(const User & u);
         User(std::string & formatted); // input is consumed
-        User(const uint32_t & UID, const std::string & NAME, const std::string KEY);
+        User(/*const uint32_t & UID,*/ const uint64_t & TIMESKEW, const std::string & NAME, const std::string KEY);
 
         // Modifiers
-        void set_uid(const uint32_t & UID);
-        void set_timeskew(const uint64_t & DELTA_T);
+        // void set_uid(const uint32_t & UID);
+        void set_timeskew(const uint64_t & TIMESKEW);
         void set_name(const std::string & NAME);
         void set_key(const std::string & KEY);
 
         // Accessors
-        uint32_t get_uid() const;
+        // uint32_t get_uid() const;
         uint64_t get_timeskew() const;
         std::string get_name() const;
         std::string get_key() const;

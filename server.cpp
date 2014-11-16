@@ -34,12 +34,19 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include <map>
 #include <set>
 
+#include "../OpenPGP/OpenPGP.h"
+
 #include "shared.h"
 #include "user.h"
 
-// move this to file or something
+// move these to file or something///////////////////////
 const std::string secret_key = HASH("SUPER SECRET KEY").digest();
+const std::string public_key_file = "testKDCpublic";
+const std::string private_key_file = "testKDCprivate";
+const std::string pki_key = "KDC";
+// //////////////////////////////////////////////////////
 
+// needs individual quit variable
 struct client_args{
     int csock;
     std::set <User> & users;
@@ -49,6 +56,7 @@ struct client_args{
         : csock(cs), users(u), quit(q){}
 };
 
+// needs to record all quit variables
 struct server_args{
     pthread_mutex_t & mutex;
     std::map <uint32_t, pthread_t> & threads;
@@ -65,12 +73,11 @@ void * client_thread(void * args){
     client_args ca = * (client_args *) args;
     int & csock = ca.csock;
     std::set <User> & users = ca.users;
-    bool & quit = ca.quit;
 
     User * client = NULL;
     // accept commands
     std::string packet;
-    while (!quit){
+    while (true){
         if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
             std::cerr << "Error: Received bad data" << std::endl;
             continue;
@@ -78,13 +85,15 @@ void * client_thread(void * args){
 
         // get packet type
         uint8_t type = packet[0];
+        // get rest of data
+        packet = packet.substr(1, packet.size() - 1);
 
         // quit works no matter what
         if (type == QUIT_PACKET){
             // clean up data
             delete client;
             client = NULL;
-            return NULL;
+            break;
         }
 
         // parse input
@@ -94,7 +103,7 @@ void * client_thread(void * args){
         else{                               // if not logged in, only allow for creating account and logging in
             if (type == LOGIN_PACKET){
                 // get username
-                std::string username = packet.substr(1, packet.size() - 1);
+                std::string username = packet;
 
                 // search "database" for user
                 for(User const & u : users){
@@ -131,11 +140,108 @@ void * client_thread(void * args){
                 }
 
             }
-            else if (type == CREATE_ACCOUNT_PACKET){
-                // create new account
+            else if (type == CREATE_ACCOUNT_PACKET){                    // create new account
+                std::string new_username = packet;
+                std::cout << "Received request for new account for " << new_username << std::endl;
+
+                // search for user in database
+                bool exists = false;
+                for(User const & u : users){
+                    if (u == new_username){
+                        exists = true;
+                        break;
+                    }
+                }
+
+                // don't allow duplicate names until unique IDs are properly implemented
+                if (exists){
+                    if (!pack_and_send(csock, FAIL_PACKET, "Error: User already exists", PACKET_SIZE)){
+                        std::cerr << "Error: Failed to send failure message" << std::endl;
+                    }
+                    continue;
+                }
+                std::cout << "No duplicates found" << std::endl;
+
+                // Open PGP public key
+                std::ifstream pub_file(public_key_file);
+                if (!pub_file){
+                    std::cerr << "Could not open public key file \"" << public_key_file << "\"" << std::endl;
+                    if (!pack_and_send(csock, FAIL_PACKET, "Error: Could not open public key file", PACKET_SIZE)){
+                        std::cerr << "Error: Failed to send failure message" << std::endl;
+                    }
+                    continue;
+                }
+
+                std::cout << "Opening PGP key" << std::endl;
+
+                // Parse key file to remove garbage
+                PGPPublicKey pub(pub_file);
+                std::string pub_str = pub.write();
+
+                if (pub_str.size() > DATA_MAX_SIZE){
+                    // send partial packet begin
+                    if (!pack_and_send(csock, START_PARTIAL_PACKET, pub_str.substr(0, DATA_MAX_SIZE), PACKET_SIZE)){
+                        std::cerr << "Error: Failed to send starting partial packet" << std::endl;
+                        continue;
+                    }
+
+                    // send partial packets
+                    unsigned int i = DATA_MAX_SIZE;
+                    const unsigned int last_block = pub_str.size() - DATA_MAX_SIZE;
+                    while (i < last_block){
+                        if (!pack_and_send(csock, PARTIAL_PACKET, pub_str.substr(i, DATA_MAX_SIZE), PACKET_SIZE)){
+                            std::cerr << "Error: Failed to send partial packet" << std::endl;
+                            continue;
+                        }
+                        i += DATA_MAX_SIZE;
+                    }
+
+                    // send partial packet end
+                    if (!pack_and_send(csock, END_PARTIAL_PACKET, pub_str.substr(i, DATA_MAX_SIZE), PACKET_SIZE)){
+                        std::cerr << "Error: Failed to send ending partial packet" << std::endl;
+                        continue;
+                    }
+                }
+                else{
+                    if (!pack_and_send(csock, PUBLIC_KEY_PACKET, pub_str, PACKET_SIZE)){
+                        std::cerr << "Error: Could not send public key" << std::endl;
+                        continue;
+                    }
+                }
+                
+                std::cout << "PGP key sent" << std::endl;
+
+                // get client verification of public key
+                if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
+                    std::cerr << "Error: Unable to receive verification from client" << std::endl;
+                    continue;
+                }
+
+                type = packet[0];
+                packet = packet.substr(1, packet.size() - 1);
+
+                // client received bad key
+                if (type == FAIL_PACKET){
+                    std::cerr << packet << std::endl;
+                    continue;
+                }
+                // client received good key
+                else if (type == SUCCESS_PACKET){
+                    std::cout << "Public key received by client" << std::endl;
+                }
+                else{
+                    std::cerr << "Error: Unexpected packet type received." << std::endl;
+                    continue;
+                }
+
+                std::cout << "Received response from client" << std::endl;
+
             }
         }
     }
+
+    ca.quit = true;
+
     return NULL;
 }
 
@@ -153,9 +259,10 @@ void * server_thread(void * args){
     pthread_mutex_t & mutex = data.mutex;
     std::map <uint32_t, pthread_t> & clients = data.threads;
     std::set <User> & users = data.users;
+    bool & quit = data.quit;
 
     // take in and parse commands
-    while (true){
+    while (!quit){
         std::string cmd;
         std::cout << "> ";
         std::getline(std::cin, cmd);
@@ -169,12 +276,18 @@ void * server_thread(void * args){
             else if (cmd == "stop"){
                 uint32_t tid;
                 if ((s >> tid) && (clients.find(tid) != clients.end())){
-                    pthread_cancel(clients.at(tid));   // not safe (?)
+                    pthread_cancel(clients.at(tid));    // not safe (?)
                     clients.erase(tid);
                 }
+                else{
+                    std::cerr << "Syntax: stop tid" << std::endl;
+                }
             }
-            else if (cmd == "quit"){     // stop server
-                break;
+            else if (cmd == "quit"){                    // stop server
+                quit = true;
+            }
+            else{
+                std::cerr << "Error: Unknown command \"" << cmd << "\"" << std::endl;
             }
         }
     }
@@ -186,7 +299,6 @@ void * server_thread(void * args){
         // clients.erase(clients.begin().first);
     // }
 
-    data.quit = true;
 
     return NULL;
 }
