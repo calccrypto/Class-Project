@@ -96,9 +96,9 @@ int main(int argc, char * argv[]){
 
     std::cout << "Connected to " << (int) ip[0] << "." << (int) ip[1] << "." << (int) ip[2] << "." << (int) ip[3] << " on port " << port << std::endl;
 
-    send(sock, "HELLO", 5, 0);
+    std::string * session_key = NULL;
+    TGT * tgt = NULL;
 
-    bool loggedin = false;
     bool quit = false;
     while (!quit){
         std::string input;
@@ -107,18 +107,21 @@ int main(int argc, char * argv[]){
 
         // these commands work whether or not the user is logged in
         if (input == "quit"){
-            loggedin = false;
+            delete session_key;
+            session_key = NULL;
+            delete tgt;
+            tgt = NULL;
             quit = true;
         }
         else if(input == "help"){
-            for(std::pair <std::string, std::string> const & help : loggedin?CLIENT_LOGGED_IN_HELP:CLIENT_NOT_LOGGED_IN_HELP){
+            for(std::pair <std::string, std::string> const & help : session_key?CLIENT_LOGGED_IN_HELP:CLIENT_NOT_LOGGED_IN_HELP){
                 std::cout << help.first << " " << help.second << std::endl;
             }
         }
         else{
             std::stringstream tokens; tokens << input;
             if (tokens >> input){
-                if (loggedin){
+                if (session_key){
                     if (input == "change"){
                         // change username or password
                         // send request to KDC for change
@@ -129,7 +132,8 @@ int main(int argc, char * argv[]){
                         // send request to KDC to talk to target
                     }
                     else if (input == "logout"){
-                        loggedin = false;
+                        delete session_key;
+                        session_key = NULL;
                     }
                     else{
                         std::cerr << "Error: Unknown input: " << input << std::endl;
@@ -156,25 +160,45 @@ int main(int argc, char * argv[]){
                         // client transforms password into key
                         std::string KA = MD5(password).digest();
 
-                        // receive first reply
+                        // receive session key
                         std::string packet;
                         if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
                             std::cerr << "Error: Received bad packet" << std::endl;
                             break;
                         }
 
-                        if (packet[0] == FAIL_PACKET){
+                        if (packet[0] == SESSION_KEY_PACKET){
+                            session_key = new std::string(packet.substr(1, packet.size() - 1));  // extract session key from packet
+                            *session_key = SYM(KA).decrypt(*session_key);                        // decrypt session key
+                            // check hash (?)
+                        }
+                        else if (packet[0] == FAIL_PACKET){
                             std::cerr << "Error: Username " << username << " not found." << std::endl;
                             break;
                         }
-                        
-                        if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
-                            std::cerr << "Error: Failed to receive TGT." << std::endl;
+                        else{
+                            std::cerr << "Error: Received bad packet" << std::endl;
                             break;
                         }
-                        
 
-                        // loggedin = decoded packet
+                        // receive TGT
+                        if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
+                            std::cerr << "Error: Received bad packet" << std::endl;
+                            break;
+                        }
+                        if (packet[0] == TGT_PACKET){
+                            tgt = new TGT(packet.substr(1, packet.size() - 1));
+                        }
+                        else if (packet[0] == FAIL_PACKET){
+                            std::cerr << "Error: TGT creation failed." << std::endl;
+                            break;
+                        }
+                        else{
+                            std::cerr << "Error: Received bad packet" << std::endl;
+                            break;
+                        }
+
+                        // sort of authenticated at this point
                     }
                     else{
                         std::cerr << "Error: Unknown input: " << input << std::endl;

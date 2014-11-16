@@ -48,9 +48,11 @@ file for full license.
 
 #include "../OpenPGP/OpenPGP.h" // Encryptions and Hashes
 
+#include "TGT.h"
+
 const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1};    // 127.0.0.1
 const uint16_t DEFAULT_PORT = 45678;                         // Ephemeral port
-const uint32_t PACKET_SIZE = 1024;                           // 1024 octets
+const uint32_t PACKET_SIZE = 256;                            // 256 octets
 const uint32_t TIME_SKEW = 300000;                           // milliseconds (5 minutes)            
 
 typedef AES SYM;                                             // default symmetric key algorithm
@@ -64,8 +66,6 @@ const uint8_t QUIT_PACKET           = 0;                     // no payload
 const uint8_t FAIL_PACKET           = 1;                     // message (?)
 const uint8_t CREATE_ACCOUNT_PACKET = 2;                     // username
 const uint8_t LOGIN_PACKET          = 3;                     // username
-const uint8_t MESSAGE1_PACKET       = 4;                     // login packet 1    
-const uint8_t MESSAGE2_PACKET       = 5;                     // login packet 2
 const uint8_t SESSION_KEY_PACKET    = 6;                     // encrypted session key
 const uint8_t TGT_PACKET            = 7;                     // 
 const uint8_t REQUEST_PACKET        = 8;                     //

@@ -19,17 +19,20 @@ user.o: user.h user.cpp ../OpenPGP/OpenPGP.h
 	$(CXX) $(CFLAGS) -c user.cpp
 
 client.o: client.cpp shared.h ../OpenPGP/OpenPGP.h
-	$(CXX) $(CFLAGS) -c client.cpp 
+	$(CXX) $(CFLAGS) -c client.cpp
 
-server.o: server.cpp shared.h user.h 
-	$(CXX) $(CFLAGS) -c server.cpp 
-    
-shared.o: shared.h shared.cpp ../OpenPGP/OpenPGP.h
+server.o: server.cpp shared.h user.h
+	$(CXX) $(CFLAGS) -c server.cpp
+
+shared.o: shared.h shared.cpp ../OpenPGP/OpenPGP.h TGT.h
 	$(CXX) $(CFLAGS) -c shared.cpp
 
-$(TARGET): shared.o client.o server.o user.o
-	$(CXX) $(CFLAGS) client.o shared.o $(LFLAGS) -o client
-	$(CXX) $(CFLAGS) server.o shared.o user.o $(LFLAGS) -o server
+TGT.o: TGT.h TGT.cpp ../OpenPGP/OpenPGP.h
+	$(CXX) $(CFLAGS) -c TGT.cpp
+
+$(TARGET): shared.o client.o server.o user.o TGT.o
+	$(CXX) $(CFLAGS) client.o shared.o TGT.o $(LFLAGS) -o client
+	$(CXX) $(CFLAGS) server.o shared.o user.o TGT.o $(LFLAGS) -o server
 
 clean:
 	rm client

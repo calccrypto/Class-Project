@@ -30,6 +30,8 @@ Some basic code for Kerberos TGT
 
 #include <iostream>
 
+#include "../OpenPGP/OpenPGP.h"
+
 class TGT{
     private:
         std::string user_id,            // "Alice"
@@ -40,6 +42,8 @@ class TGT{
     public:
         TGT();
         TGT(const TGT & tgt);
+        TGT(const std::string & tgt);   // read in formatted TGT string
+        TGT(const std::string uid, const std::string & sk, const uint64_t & ts, const uint64_t & lt);
 
         // Modifiers
         void set_user_id(const std::string & uid);
@@ -47,13 +51,15 @@ class TGT{
         void set_timestamp(const uint64_t & ts);
         void set_lifetime(const uint64_t & lt);
 
-        // get everything combined into one string
-        std::string str();
-        
-        std::string get_user_id();
-        std::string get_session_key();
-        uint64_t get_timestamp();
-        uint64_t get_lifetime();
+        // Accessors
+        std::string get_user_id() const;
+        std::string get_session_key() const;
+        uint64_t get_timestamp() const;
+        uint64_t get_lifetime() const;
+
+        std::string str() const;        // formatted string
 };
+
+std::ostream & operator<<(std::ostream & stream, const TGT & tgt);
 
 #endif

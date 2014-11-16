@@ -93,39 +93,40 @@ void * client_thread(void * args){
             if (type == LOGIN_PACKET){
                 // get username
                 std::string username = packet.substr(1, packet.size() - 1);
-                User * claim = NULL;
 
                 // search "database" for user
                 for(User const & u : users){
                     if (u == username){
-                        *claim = u;
+                        *client = u;
                         break;
                     }
                 }
 
+                std::string data; // generic place to put data; change later on
+
                 // person not found in database
-                if (!claim){
+                if (!client){
                     if (!pack_and_send(csock, FAIL_PACKET, "Could not find user", PACKET_SIZE)){
                         std::cerr << "Error: Could not send error message" << std::endl;
                     }
                     break;
                 }
 
-                // generate and encrypt session key
-                if (!pack_and_send(csock, MESSAGE1_PACKET, SYM(claim -> get_key()).encrypt(random_octets(KEY_SIZE >> 3)), PACKET_SIZE)){
+                // generate session key (encrypted with user key)
+                std::string session_key = random_octets(KEY_SIZE >> 3); // session key
+                data = SYM(client -> get_key()).encrypt(data);          // need to add hash
+                if (!pack_and_send(csock, SESSION_KEY_PACKET, data, PACKET_SIZE)){
                     std::cerr << "Error: Could not send session key." << std::endl;
                     break;
                 }
-                
-                // send TGT
-                
-                
-                if (!pack_and_send(csock, MESSAGE2_PACKET, SYM(claim -> get_key()).encrypt(random_octets(KEY_SIZE >> 3)), PACKET_SIZE)){
-                    std::cerr << "Error: Could not send session key." << std::endl;
-                    break;
-                }
-                
 
+                // send TGT (encrypted with server key)
+                data = TGT(username, session_key, now(), TIME_SKEW).str();
+                data = SYM(secret_key).encrypt(data);                   // need to add hash
+                if (!pack_and_send(csock, TGT_PACKET, data, PACKET_SIZE)){
+                    std::cerr << "Error: Could not send session key." << std::endl;
+                    break;
+                }
 
             }
             else if (type == CREATE_ACCOUNT_PACKET){
