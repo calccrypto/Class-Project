@@ -43,9 +43,10 @@ const std::string secret_key = HASH("SUPER SECRET KEY").digest();
 struct client_args{
     int csock;
     std::set <User> & users;
+    bool & quit;
 
-    client_args(int cs, std::set <User> & u)
-        : csock(cs), users(u) {}
+    client_args(int cs, std::set <User> & u, bool & q)
+        : csock(cs), users(u), quit(q){}
 };
 
 struct server_args{
@@ -62,14 +63,19 @@ struct server_args{
 void * client_thread(void * args){
     // copy arguments out
     client_args ca = * (client_args *) args;
-    int csock = ca.csock;
+    int & csock = ca.csock;
     std::set <User> & users = ca.users;
+    bool & quit = ca.quit;
 
     User * client = NULL;
-
     // accept commands
     std::string packet;
-    while (recv_and_unpack(csock, packet, PACKET_SIZE)){
+    while (!quit){
+        if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
+            std::cerr << "Error: Received bad data" << std::endl;
+            continue;
+        }
+
         // get packet type
         uint8_t type = packet[0];
 
@@ -82,12 +88,8 @@ void * client_thread(void * args){
         }
 
         // parse input
-        if (client){  // if identity is established
-            // if (data == "talk"){}
-            // else if (data == ""){}
-            // else{
-                // // send "unknown command packet"
-            // }
+        if (client){                        // if identity is established
+
         }
         else{                               // if not logged in, only allow for creating account and logging in
             if (type == LOGIN_PACKET){
@@ -109,7 +111,7 @@ void * client_thread(void * args){
                     if (!pack_and_send(csock, FAIL_PACKET, "Could not find user", PACKET_SIZE)){
                         std::cerr << "Error: Could not send error message" << std::endl;
                     }
-                    break;
+                    continue;
                 }
 
                 // generate session key (encrypted with user key)
@@ -117,7 +119,7 @@ void * client_thread(void * args){
                 data = SYM(client -> get_key()).encrypt(data);          // need to add hash
                 if (!pack_and_send(csock, SESSION_KEY_PACKET, data, PACKET_SIZE)){
                     std::cerr << "Error: Could not send session key." << std::endl;
-                    break;
+                    continue;
                 }
 
                 // send TGT (encrypted with server key)
@@ -131,9 +133,6 @@ void * client_thread(void * args){
             }
             else if (type == CREATE_ACCOUNT_PACKET){
                 // create new account
-            }
-            else{
-                // send "unknown command packet"
             }
         }
     }
@@ -236,7 +235,6 @@ int main(int argc, char * argv[]){
     }
     std::cout << "Listening on socket." << std::endl << std::endl;
 
-
     // open (and decrypt) user list
     std::set <User> users;
     std::ifstream user_file("users", std::ios::binary);
@@ -262,7 +260,6 @@ int main(int argc, char * argv[]){
         user_file.close(); // force the file to close
     }
 
-
     // put together variables to pass into administrator thread
     pthread_mutex_t mutex;                                      // global mutex
     std::map <uint32_t, pthread_t> threads;   // list of running threads
@@ -285,12 +282,14 @@ int main(int argc, char * argv[]){
         if(csock < 0)    //bad client, skip it
             continue;
 
-        client_args ca(csock, users);
+        client_args ca(csock, users, quit);
 
         // start thread
         // keep on trying to create thread
         while (pthread_create(&threads[thread_count++], NULL, client_thread, (void *) &ca));
+        pthread_mutex_lock(&mutex);
         std::cout << "Thread " << thread_count << " started." << std::endl;
+        pthread_mutex_unlock(&mutex);
     }
 
     // write user list to file

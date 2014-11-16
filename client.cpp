@@ -103,7 +103,7 @@ int main(int argc, char * argv[]){
     while (!quit){
         std::string input;
         std::cout << "> ";
-        std::getline(std::cin, input);
+        std::cin >> input;
 
         // these commands work whether or not the user is logged in
         if (input == "quit"){
@@ -170,32 +170,32 @@ int main(int argc, char * argv[]){
                         if (packet[0] == SESSION_KEY_PACKET){
                             session_key = new std::string(packet.substr(1, packet.size() - 1));  // extract session key from packet
                             *session_key = SYM(KA).decrypt(*session_key);                        // decrypt session key
-                            // check hash (?)
+                            // check hash
                         }
                         else if (packet[0] == FAIL_PACKET){
                             std::cerr << "Error: Username " << username << " not found." << std::endl;
-                            break;
+                            continue;
                         }
                         else{
                             std::cerr << "Error: Received bad packet" << std::endl;
-                            break;
+                            continue;
                         }
 
                         // receive TGT
                         if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
                             std::cerr << "Error: Received bad packet" << std::endl;
-                            break;
+                            continue;
                         }
                         if (packet[0] == TGT_PACKET){
                             tgt = new TGT(packet.substr(1, packet.size() - 1));
                         }
                         else if (packet[0] == FAIL_PACKET){
                             std::cerr << "Error: TGT creation failed." << std::endl;
-                            break;
+                            continue;
                         }
                         else{
                             std::cerr << "Error: Received bad packet" << std::endl;
-                            break;
+                            continue;
                         }
 
                         // sort of authenticated at this point
