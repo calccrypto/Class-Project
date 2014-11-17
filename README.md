@@ -6,18 +6,16 @@ Copyright (c) 2014 Jason Lee @ calccrypto at gmail.com
 Please see LICENSE file for license. The networking code
 was modified from code written by Andrew Zonenberg.
 
-POSIX libraries are required. The `accept4` function,
-which is nonstandard is also used.
+POSIX libraries are required for sockets.
 
 OpenPGP (https://github.com/calccrypto/OpenPGP), and
 its dependencies are required to build this project.
 The makefile assumes that the folder containing this
-project is in the same directory as OpenPGP. Please
-change the linking directory if this is not so.
+project is in the same directory as OpenPGP. 
 
 Once all of the necessary files are available, run
-make to build the server and client programs. OpenPGP
-will be built if it has not already been built.
+make to build the server and client programs. Build
+OpenPGP if has not already been built.
 
 ----
 
