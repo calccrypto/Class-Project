@@ -50,15 +50,28 @@ const std::string pki_key = "KDC";
 // //////////////////////////////////////////////////////
 
 // stuff the user sees
-void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, bool *& quit){
+// need to prevent user from logging in multiple times at once
+// need to check for disconnect as well as bad packet
+void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex, std::set <User> & users, bool *& quit){
     // User's identity
     User * client = NULL;
 
     // accept commands
     std::string packet;
     while (!*quit){
-        if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
+        int rc = recv(csock, packet, PACKET_SIZE);
+        if (rc == PACKET_SIZE){
+            if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                std::cerr << "Error: Received baaad data" << std::endl;
+                continue;
+            }
+        }
+        else if(rc == -1){
             std::cerr << "Error: Received bad data" << std::endl;
+            continue;
+        }
+        else if (rc == 0){
+            *quit = true;
             continue;
         }
 
@@ -96,7 +109,22 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
 
                 // person not found in database
                 if (!client){
-                    if (!pack_and_send(csock, FAIL_PACKET, "Could not find user", PACKET_SIZE)){
+                    packet = "Error: Could not find user";
+                    if (!packetize(FAIL_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                        std::cerr << "Error: Could not pack data" << std::endl;
+                        continue;
+                    }
+                    rc = send(csock, packet, PACKET_SIZE);
+                    if (rc != PACKET_SIZE){
+                        if(rc == -1){
+                            std::cerr << "Error: Cannot send data" << std::endl;
+                        }
+                        else if (rc == 0){
+                            *quit = true;
+                        }
+                        else {
+                            std::cerr << "Error: Not all data sent" << std::endl;
+                        }
                         std::cerr << "Error: Could not send error message" << std::endl;
                     }
                     continue;
@@ -105,19 +133,46 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
                 // generate session key (encrypted with user key)
                 std::string session_key = random_octets(KEY_SIZE >> 3); // session key
                 data = SYM(client -> get_key()).encrypt(data);          // need to add hash
-                if (!pack_and_send(csock, SESSION_KEY_PACKET, data, PACKET_SIZE)){
-                    std::cerr << "Error: Could not send session key." << std::endl;
+
+                packet = data;
+                if (!packetize(SESSION_KEY_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                    std::cerr << "Error: Could not pack data" << std::endl;
+                    continue;
+                }
+                rc = send(csock, packet, PACKET_SIZE);
+                if (rc != PACKET_SIZE){
+                    if(rc == -1){
+                        std::cerr << "Error: Cannot send data" << std::endl;
+                    }
+                    else if (rc == 0){
+                        *quit = true;
+                    }
+                    else {
+                        std::cerr << "Error: Not all data sent" << std::endl;
+                    }
+                    std::cerr << "Error: Could not send session_key" << std::endl;
                     continue;
                 }
 
                 // send TGT (encrypted with server key)
                 data = TGT(username, session_key, now(), TIME_SKEW).str();
                 data = SYM(secret_key).encrypt(data);                   // need to add hash
-                if (!pack_and_send(csock, TGT_PACKET, data, PACKET_SIZE)){
-                    std::cerr << "Error: Could not send session key." << std::endl;
-                    break;
-                }
 
+                packet = data;
+                rc = send(csock, packet, PACKET_SIZE);
+                if (rc != PACKET_SIZE){
+                    if(rc == -1){
+                        std::cerr << "Error: Cannot send data" << std::endl;
+                    }
+                    else if (rc == 0){
+                        *quit = true;
+                    }
+                    else {
+                        std::cerr << "Error: Not all data sent" << std::endl;
+                    }
+                    std::cerr << "Error: Could not send TGT" << std::endl;
+                    continue;
+                }
             }
             else if (type == CREATE_ACCOUNT_PACKET_1){                    // create new account
                 std::string new_username = packet;
@@ -134,8 +189,23 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
 
                 // don't allow duplicate names until unique IDs are properly implemented
                 if (exists){
-                    if (!pack_and_send(csock, FAIL_PACKET, "Error: User already exists", PACKET_SIZE)){
-                        std::cerr << "Error: Failed to send failure message" << std::endl;
+                    packet = "Error: User already exists";
+                    if (!packetize(FAIL_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                        std::cerr << "Error: Could not pack data" << std::endl;
+                        continue;
+                    }
+                    rc = send(csock, packet, PACKET_SIZE);
+                    if (rc != PACKET_SIZE){
+                        if(rc == -1){
+                            std::cerr << "Error: Cannot send data" << std::endl;
+                        }
+                        else if (rc == 0){
+                            *quit = true;
+                        }
+                        else {
+                            std::cerr << "Error: Not all data sent" << std::endl;
+                        }
+                        std::cerr << "Error: Request for TGT Failed" << std::endl;
                     }
                     continue;
                 }
@@ -145,8 +215,23 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
                 std::ifstream pub_file(public_key_file);
                 if (!pub_file){
                     std::cerr << "Could not open public key file \"" << public_key_file << "\"" << std::endl;
-                    if (!pack_and_send(csock, FAIL_PACKET, "Error: Could not open public key file", PACKET_SIZE)){
-                        std::cerr << "Error: Failed to send failure message" << std::endl;
+                    packet = "Error: Could not open public key";
+                    if (!packetize(FAIL_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                        std::cerr << "Error: Could not pack data" << std::endl;
+                        continue;
+                    }
+                    rc = send(csock, packet, PACKET_SIZE);
+                    if (rc != PACKET_SIZE){
+                        if(rc == -1){
+                            std::cerr << "Error: Cannot send data" << std::endl;
+                        }
+                        else if (rc == 0){
+                            *quit = true;
+                        }
+                        else {
+                            std::cerr << "Error: Not all data sent" << std::endl;
+                        }
+                        std::cerr << "Error: Could not send error message" << std::endl;
                     }
                     continue;
                 }
@@ -159,16 +244,45 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
 
                 if (pub_str.size() > DATA_MAX_SIZE){
                     // send partial packet begin
-                    if (!pack_and_send(csock, START_PARTIAL_PACKET, pub_str.substr(0, DATA_MAX_SIZE), PACKET_SIZE)){
+                    packet = pub_str.substr(0, DATA_MAX_SIZE);
+                    if (!packetize(START_PARTIAL_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                        std::cerr << "Error: Could notaaa pack data" << std::endl;
+                        continue;
+                    }
+                    rc = send(csock, packet, PACKET_SIZE);
+                    if (rc != PACKET_SIZE){
+                        if(rc == -1){
+                            std::cerr << "Error: Cannot send data" << std::endl;
+                        }
+                        else if (rc == 0){
+                            *quit = true;
+                        }
+                        else {
+                            std::cerr << "Error: Not all data sent" << std::endl;
+                        }
                         std::cerr << "Error: Failed to send starting partial packet" << std::endl;
                         continue;
                     }
-
                     // send partial packets
                     unsigned int i = DATA_MAX_SIZE;
                     const unsigned int last_block = pub_str.size() - DATA_MAX_SIZE;
                     while (i < last_block){
-                        if (!pack_and_send(csock, PARTIAL_PACKET, pub_str.substr(i, DATA_MAX_SIZE), PACKET_SIZE)){
+                        packet = pub_str.substr(i, DATA_MAX_SIZE);
+                        if (!packetize(PARTIAL_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                            std::cerr << "Error: Could not pack data" << std::endl;
+                            continue;
+                        }
+                        rc = send(csock, packet, PACKET_SIZE);
+                        if (rc != PACKET_SIZE){
+                            if(rc == -1){
+                                std::cerr << "Error: Cannot send data" << std::endl;
+                            }
+                            else if (rc == 0){
+                                *quit = true;
+                            }
+                            else {
+                                std::cerr << "Error: Not all data sent" << std::endl;
+                            }
                             std::cerr << "Error: Failed to send partial packet" << std::endl;
                             continue;
                         }
@@ -176,13 +290,43 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
                     }
 
                     // send partial packet end
-                    if (!pack_and_send(csock, END_PARTIAL_PACKET, pub_str.substr(i, DATA_MAX_SIZE), PACKET_SIZE)){
+                    packet = pub_str.substr(i, DATA_MAX_SIZE);
+                    if (!packetize(END_PARTIAL_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                        std::cerr << "Error: Could not pack data" << std::endl;
+                        continue;
+                    }
+                    rc = send(csock, packet, PACKET_SIZE);
+                    if (rc != PACKET_SIZE){
+                        if(rc == -1){
+                            std::cerr << "Error: Cannot send data" << std::endl;
+                        }
+                        else if (rc == 0){
+                            *quit = true;
+                        }
+                        else {
+                            std::cerr << "Error: Not all data sent" << std::endl;
+                        }
                         std::cerr << "Error: Failed to send ending partial packet" << std::endl;
                         continue;
                     }
                 }
                 else{
-                    if (!pack_and_send(csock, CREATE_ACCOUNT_PACKET_2, pub_str, PACKET_SIZE)){
+                    packet = pub_str;
+                    if (!packetize(CREATE_ACCOUNT_PACKET_2, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                        std::cerr << "Error: Could not pack data" << std::endl;
+                        continue;
+                    }
+                    rc = send(csock, packet, PACKET_SIZE);
+                    if (rc != PACKET_SIZE){
+                        if(rc == -1){
+                            std::cerr << "Error: Cannot send data" << std::endl;
+                        }
+                        else if (rc == 0){
+                            *quit = true;
+                        }
+                        else {
+                            std::cerr << "Error: Not all data sent" << std::endl;
+                        }
                         std::cerr << "Error: Could not send public key" << std::endl;
                         continue;
                     }
@@ -191,8 +335,19 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
                 std::cout << "PGP key sent" << std::endl;
 
                 // get client verification of public key
-                if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
-                    std::cerr << "Error: Unable to receive verification from client" << std::endl;
+                rc = recv(csock, packet, PACKET_SIZE);
+                if (rc == PACKET_SIZE){
+                    if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                        std::cerr << "Error: Unable to receive verification from client" << std::endl;
+                        continue;
+                    }
+                }
+                else if(rc == -1){
+                    std::cerr << "Error: Received bad data" << std::endl;
+                    continue;
+                }
+                else if (rc == 0){
+                    *quit = true;
                     continue;
                 }
 
@@ -219,8 +374,19 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
                 // check if it has already been taken
 
                 // get client password
-                if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
-                    std::cerr << "Error: Unable to receive password from client" << std::endl;
+                rc = recv(csock, packet, PACKET_SIZE);
+                if (rc == PACKET_SIZE){
+                    if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                        std::cerr << "Error: Unable to unpack client password" << std::endl;
+                        continue;
+                    }
+                }
+                else if(rc == -1){
+                    std::cerr << "Error: Received bad data" << std::endl;
+                    continue;
+                }
+                else if (rc == 0){
+                    *quit = true;
                     continue;
                 }
 
@@ -228,16 +394,38 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
                 std::string kh = packet.substr(1, packet.size() - 1);
 
                 if (type == CREATE_ACCOUNT_PACKET_3){
-                    if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
+                    rc = recv(csock, packet, PACKET_SIZE);
+                    if (rc == PACKET_SIZE){
+                        if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                            std::cerr << "Error: Could not unpack new account name" << std::endl;
+                            continue;
+                        }
+                    }
+                    else if(rc == -1){
                         std::cerr << "Error: Received bad data" << std::endl;
+                        continue;
+                    }
+                    else if (rc == 0){
+                        *quit = true;
                         continue;
                     }
                 }
                 else if (type == START_PARTIAL_PACKET){
                     // receive partial packets
                     while (type != END_PARTIAL_PACKET){
-                        if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
-                            std::cerr << "Error: Failed to receive partial packet" << std::endl;
+                        rc = recv(csock, packet, PACKET_SIZE);
+                        if (rc == PACKET_SIZE){
+                            if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                std::cerr << "Error: Could not unpack partial packets" << std::endl;
+                                continue;
+                            }
+                        }
+                        else if(rc == -1){
+                            std::cerr << "Error: Received bad data" << std::endl;
+                            continue;
+                        }
+                        else if (rc == 0){
+                            *quit = true;
                             continue;
                         }
 
@@ -282,7 +470,7 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
 
                 // encrypt KA with Kh
                 KA = use_OpenPGP_CFB_encrypt(SYM_NUM, 18, KA, kh);
-                
+
                 // create new user
                 User new_user;
                 new_user.set_name(new_username);
@@ -300,14 +488,15 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
             }
         }
     }
-
+    std::cout << "Thread " << thread_id << " terminated" << std::endl;
     return NULL;
 }
 
 const std::map <std::string, std::string> SERVER_HELP = {
     std::pair <std::string, std::string>("help", ""),               // print help menu
     std::pair <std::string, std::string>("quit", ""),               // stop server
-    std::pair <std::string, std::string>("save", ""),      // save database
+    std::pair <std::string, std::string>("save", ""),               // save database
+    std::pair <std::string, std::string>("list", ""),               // list running threads
     std::pair <std::string, std::string>("stop", "thread-id"),      // stop a single thread
     // std::pair <std::string, std::string>("", ""),
 };
@@ -378,6 +567,11 @@ void * server_thread(std::mutex & mutex, std::map <uint32_t, std::pair <std::thr
                 }
                 else{
                     std::cerr << "Error: Database could not be saved" << std::endl;
+                }
+            }
+            else if (cmd == "list"){
+                for(std::pair <const uint32_t, std::pair <std::thread, bool *> > & t : threads){
+                    std::cout << t.first << " " << t.second.first.get_id() << std::endl;
                 }
             }
             else{
@@ -487,7 +681,7 @@ int main(int argc, char * argv[]){
         // start thread
         try{
             bool * quit = new bool(false);
-            threads[thread_count] = std::pair <std::thread, bool *> (std::thread(client_thread, std::ref(csock), std::ref(mutex), std::ref(users), std::ref(quit)), quit);
+            threads[thread_count] = std::pair <std::thread, bool *> (std::thread(client_thread, std::ref(csock), thread_count, std::ref(mutex), std::ref(users), std::ref(quit)), quit);
             std::cout << "Thread " << thread_count << " started." << std::endl;
             thread_count++;
         }

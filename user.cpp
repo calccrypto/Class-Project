@@ -1,10 +1,10 @@
 #include "user.h"
 
 User::User()
-    : /*uid(0),*/ timeskew(0), name(""), key("") {}
+    : /*uid(0),*/ timeskew(0), name(""), key(""), loggedin(false) {}
 
 User::User(const User & u)
-    : /*uid(u.uid),*/ timeskew(u.timeskew), name(u.name), key(u.key) {
+    : /*uid(u.uid),*/ timeskew(u.timeskew), name(u.name), key(u.key), loggedin(u.loggedin) {
 }
 
 User::User(std::string & formatted)
@@ -18,6 +18,8 @@ User::User(std::string & formatted)
     size_t key_len = toint(formatted.substr(16 + name_len, 4), 256);
     key = formatted.substr(20 + name_len, key_len);
     formatted = formatted.substr(20 + name_len + key_len, formatted.size() - (20 + name_len + key_len));
+
+    loggedin = false;
 }
 
 User::User(/*const uint32_t & UID,*/ const uint64_t & TIMESKEW, const std::string & NAME, const std::string KEY)
@@ -39,6 +41,10 @@ void User::set_key(const std::string & KEY){
     key = KEY;
 }
 
+void User::set_loggedin(const bool & l){
+    loggedin = l;
+}
+
 // unsigned int User::get_uid() const {
     // return uid;
 // }
@@ -53,6 +59,10 @@ std::string User::get_name() const {
 
 std::string User::get_key() const {
     return key;
+}
+
+bool User::get_loggedin() const{
+    return loggedin;
 }
 
 User User::operator=(const User & u){
@@ -83,6 +93,18 @@ bool User::operator<(const User & u) const {
         // return (uid < u.uid);
     // }
     return false;
+}
+
+bool User::login(){
+    bool out = !loggedin;
+    loggedin = true;
+    return out;
+}
+
+bool User::logout(){
+    bool out = loggedin;
+    loggedin = false;
+    return out;
 }
 
 std::string User::str() const {

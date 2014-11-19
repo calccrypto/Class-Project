@@ -90,7 +90,7 @@ int main(int argc, char * argv[]){
     ipaddr[2] = ip[2];
     ipaddr[3] = ip[3];
     if(0 != connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr))){ // can probably remove if statement, buyt keep connect()
-        std::cout << "Error: Failed to connect to " << (int) ip[0] << "." << (int) ip[1] << "." << (int) ip[2] << "." << (int) ip[3] << " on port " << port << std::endl;
+        std::cerr << "Error: Failed to connect to " << (int) ip[0] << "." << (int) ip[1] << "." << (int) ip[2] << "." << (int) ip[3] << " on port " << port << std::endl;
         return -1;
     }
 
@@ -105,8 +105,31 @@ int main(int argc, char * argv[]){
         std::cout << "> ";
         std::cin >> input;
 
+        int rc;
+        std::string packet;
+
         // these commands work whether or not the user is logged in
         if (input == "quit"){
+            // send quit to server
+            packet = "";
+            if (!packetize(QUIT_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                std::cerr << "Error: Could not pack data" << std::endl;
+                continue;
+            }
+            rc = send(sock, packet, PACKET_SIZE);
+            if (rc != PACKET_SIZE){
+                if(rc == -1){
+                    std::cerr << "Error: Cannot send data" << std::endl;
+                }
+                else if (rc == 0){
+                    quit = true;
+                }
+                else {
+                    std::cerr << "Error: Not all data sent" << std::endl;
+                }
+                std::cerr << "Error: Could not terminate connection" << std::endl;
+                continue;
+            }
             delete session_key;
             session_key = NULL;
             delete tgt;
@@ -121,7 +144,7 @@ int main(int argc, char * argv[]){
         else{
             std::stringstream tokens; tokens << input;
             if (tokens >> input){
-                if (session_key){
+                if (session_key){ // if logged in
                     if (input == "change"){
                         // change username or password
                         // send request to KDC for change
@@ -139,7 +162,7 @@ int main(int argc, char * argv[]){
                         std::cerr << "Error: Unknown input: " << input << std::endl;
                     }
                 }
-                else{
+                else{               // not logged in
                     std::string username, password;
                     if (input == "new-account"){
                         std::cout << "New account username: ";
@@ -158,7 +181,22 @@ int main(int argc, char * argv[]){
                         // }
 
                         // send request to KDC
-                        if (!pack_and_send(sock, CREATE_ACCOUNT_PACKET_1, username, PACKET_SIZE)){
+                        packet = username;
+                        if (!packetize(CREATE_ACCOUNT_PACKET_1, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                            std::cerr << "Error: Could not pack data" << std::endl;
+                            continue;
+                        }
+                        rc = send(sock, packet, PACKET_SIZE);
+                        if (rc != PACKET_SIZE){
+                            if(rc == -1){
+                                std::cerr << "Error: Cannot send data" << std::endl;
+                            }
+                            else if (rc == 0){
+                                quit = true;
+                            }
+                            else {
+                                std::cerr << "Error: Not all data sent" << std::endl;
+                            }
                             std::cerr << "Error: Could not send request for new account" << std::endl;
                             continue;
                         }
@@ -167,31 +205,61 @@ int main(int argc, char * argv[]){
 
                         // recieve failure message or public key
                         std::string packet;
-                        if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
-                            std::cerr << "Error: Received bad data" << packet << std::endl;
+                        rc = recv(sock, packet, PACKET_SIZE);
+                        if (rc == PACKET_SIZE){
+                            if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                std::cerr << "Error: Could not receive response from KDC" << std::endl;
+                                continue;
+                            }
+                        }
+                        else if(rc == -1){
+                            std::cerr << "Error: Received bad data" << std::endl;
                             continue;
                         }
-
-                        std::cout << "Public key started" << std::endl;
+                        else if (rc == 0){
+                            quit = true;
+                            continue;
+                        }
+                        std::cout << "Started receiving Public key" << std::endl;
 
                         uint8_t type = packet[0];
                         std::string pub_str = packet.substr(1, packet.size() - 1);
 
                         if (type == CREATE_ACCOUNT_PACKET_2){
-                            if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
+                            rc = recv(sock, packet, PACKET_SIZE);
+                            if (rc == PACKET_SIZE){
+                                if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                    std::cerr << "Error: Could not unpack KDC public key" << std::endl;
+                                    continue;
+                                }
+                            }
+                            else if(rc == -1){
                                 std::cerr << "Error: Received bad data" << std::endl;
                                 continue;
                             }
-
+                            else if (rc == 0){
+                                quit = true;
+                                continue;
+                            }
                         }
                         else if (type == START_PARTIAL_PACKET){
                             // receive partial packets
                             while (type != END_PARTIAL_PACKET){
-                                if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
-                                    std::cerr << "Error: Failed to receive partial packet" << std::endl;
+                                rc = recv(sock, packet, PACKET_SIZE);
+                                if (rc == PACKET_SIZE){
+                                    if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                        std::cerr << "Error: Could not unpack partial packet" << std::endl;
+                                        continue;
+                                    }
+                                }
+                                else if(rc == -1){
+                                    std::cerr << "Error: Received bad data" << std::endl;
                                     continue;
                                 }
-
+                                else if (rc == 0){
+                                    quit = true;
+                                    continue;
+                                }
                                 type = packet[0];
                                 packet = packet.substr(1, packet.size() - 1);
 
@@ -229,13 +297,45 @@ int main(int argc, char * argv[]){
                         // tell server it was received
                         if (!verify_key(pub, pub)){
                             std::cerr << "Error: Key was not signed with given signature packet" << std::endl;
-                            if (!pack_and_send(sock, FAIL_PACKET, "Error: Public key self check failed", PACKET_SIZE)){
-                                std::cerr << "Error: Could not send request for new account" << std::endl;
+                            packet = "Error: Public key self check failed";
+                            if (!packetize(FAIL_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                std::cerr << "Error: Could not pack data" << std::endl;
+                                continue;
                             }
+                            rc = send(sock, packet, PACKET_SIZE);
+                            if (rc != PACKET_SIZE){
+                                if(rc == -1){
+                                    std::cerr << "Error: Cannot send data" << std::endl;
+                                }
+                                else if (rc == 0){
+                                    quit = true;
+                                }
+                                else {
+                                    std::cerr << "Error: Not all data sent" << std::endl;
+                                }
+                                std::cerr << "Error: Could not send failurer message" << std::endl;
+                                continue;
+                            }
+
                             continue;
                         }
                         else{
-                            if (!pack_and_send(sock, SUCCESS_PACKET, "Public key self check passed", PACKET_SIZE)){
+                            packet = "Public key self check passed";
+                            if (!packetize(SUCCESS_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                std::cerr << "Error: Could not pack data" << std::endl;
+                                continue;
+                            }
+                            rc = send(sock, packet, PACKET_SIZE);
+                            if (rc != PACKET_SIZE){
+                                if(rc == -1){
+                                    std::cerr << "Error: Cannot send data" << std::endl;
+                                }
+                                else if (rc == 0){
+                                    quit = true;
+                                }
+                                else {
+                                    std::cerr << "Error: Not all data sent" << std::endl;
+                                }
                                 std::cerr << "Error: Could not send verification message" << std::endl;
                                 continue;
                             }
@@ -250,8 +350,23 @@ int main(int argc, char * argv[]){
                         // send PGP Message Block to server
                         if (packet.size() > DATA_MAX_SIZE){
                             // send partial packet begin
-                            if (!pack_and_send(sock, START_PARTIAL_PACKET, packet.substr(0, DATA_MAX_SIZE), PACKET_SIZE)){
-                                std::cerr << "Error: Failed to send starting partial packet" << std::endl;
+                            std::string partial_packet = packet.substr(0, DATA_MAX_SIZE);
+                            if (!packetize(START_PARTIAL_PACKET, partial_packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                std::cerr << "Error: Could not pack data" << std::endl;
+                                continue;
+                            }
+                            rc = send(sock, partial_packet, PACKET_SIZE);
+                            if (rc != PACKET_SIZE){
+                                if(rc == -1){
+                                    std::cerr << "Error: Cannot send data" << std::endl;
+                                }
+                                else if (rc == 0){
+                                    quit = true;
+                                }
+                                else {
+                                    std::cerr << "Error: Not all data sent" << std::endl;
+                                }
+                                std::cerr << "Error: Could not send verification message" << std::endl;
                                 continue;
                             }
 
@@ -259,21 +374,68 @@ int main(int argc, char * argv[]){
                             unsigned int i = DATA_MAX_SIZE;
                             const unsigned int last_block = packet.size() - DATA_MAX_SIZE;
                             while (i < last_block){
-                                if (!pack_and_send(sock, PARTIAL_PACKET, packet.substr(i, DATA_MAX_SIZE), PACKET_SIZE)){
-                                    std::cerr << "Error: Failed to send partial packet" << std::endl;
+                                partial_packet = packet.substr(i, DATA_MAX_SIZE);
+                                if (!packetize(PARTIAL_PACKET, partial_packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                    std::cerr << "Error: Could not pack data" << std::endl;
+                                    continue;
+                                }
+                                rc = send(sock, partial_packet, PACKET_SIZE);
+                                if (rc != PACKET_SIZE){
+                                    if(rc == -1){
+                                        std::cerr << "Error: Cannot send data" << std::endl;
+                                    }
+                                    else if (rc == 0){
+                                        quit = true;
+                                    }
+                                    else {
+                                        std::cerr << "Error: Not all data sent" << std::endl;
+                                    }
+                                    std::cerr << "Error: Could not send partial packet" << std::endl;
                                     continue;
                                 }
                                 i += DATA_MAX_SIZE;
                             }
 
+                            // need to add error checking here (maybe)
+
                             // send partial packet end
-                            if (!pack_and_send(sock, END_PARTIAL_PACKET, packet.substr(i, DATA_MAX_SIZE), PACKET_SIZE)){
-                                std::cerr << "Error: Failed to send ending partial packet" << std::endl;
+                            partial_packet = packet.substr(i, DATA_MAX_SIZE);
+                            if (!packetize(END_PARTIAL_PACKET, partial_packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                std::cerr << "Error: Could not pack data" << std::endl;
                                 continue;
                             }
+                            rc = send(sock, partial_packet, PACKET_SIZE);
+                            if (rc != PACKET_SIZE){
+                                if(rc == -1){
+                                    std::cerr << "Error: Cannot send data" << std::endl;
+                                }
+                                else if (rc == 0){
+                                    quit = true;
+                                }
+                                else {
+                                    std::cerr << "Error: Not all data sent" << std::endl;
+                                }
+                                std::cerr << "Error: Could not send final partial packet" << std::endl;
+                                continue;
+                            }
+
                         }
                         else{ // send all at once
-                            if (!pack_and_send(sock, CREATE_ACCOUNT_PACKET_3, packet, PACKET_SIZE)){
+                            if (!packetize(CREATE_ACCOUNT_PACKET_3, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                std::cerr << "Error: Could not pack data" << std::endl;
+                                continue;
+                            }
+                            rc = send(sock, packet, PACKET_SIZE);
+                            if (rc != PACKET_SIZE){
+                                if(rc == -1){
+                                    std::cerr << "Error: Cannot send data" << std::endl;
+                                }
+                                else if (rc == 0){
+                                    quit = true;
+                                }
+                                else {
+                                    std::cerr << "Error: Not all data sent" << std::endl;
+                                }
                                 std::cerr << "Error: Could not send password to client" << std::endl;
                                 continue;
                             }
@@ -289,8 +451,23 @@ int main(int argc, char * argv[]){
                         std::cout << "Password: ";
                         std::cin >> password;   // should hide input
 
-                        if (!pack_and_send(sock, LOGIN_PACKET, username, PACKET_SIZE)){
-                            std::cerr << "Error: Request for TGT failed" << std::endl;
+                        packet = username;
+                        if (!packetize(LOGIN_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                            std::cerr << "Error: Could not pack data" << std::endl;
+                            continue;
+                        }
+                        rc = send(sock, packet, PACKET_SIZE);
+                        if (rc != PACKET_SIZE){
+                            if(rc == -1){
+                                std::cerr << "Error: Cannot send data" << std::endl;
+                            }
+                            else if (rc == 0){
+                                quit = true;
+                            }
+                            else {
+                                std::cerr << "Error: Not all data sent" << std::endl;
+                            }
+                            std::cerr << "Error: Request for TGT Failed" << std::endl;
                             continue;
                         }
 
@@ -299,9 +476,20 @@ int main(int argc, char * argv[]){
 
                         // receive session key
                         std::string packet;
-                        if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
-                            std::cerr << "Error: Received bad packet" << std::endl;
-                            break;
+                        rc = recv(sock, packet, PACKET_SIZE);
+                        if (rc == PACKET_SIZE){
+                            if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                std::cerr << "Error: Could not unpack session key" << std::endl;
+                                continue;
+                            }
+                        }
+                        else if(rc == -1){
+                            std::cerr << "Error: Received bad data" << std::endl;
+                            continue;
+                        }
+                        else if (rc == 0){
+                            quit = true;
+                            continue;
                         }
 
                         if (packet[0] == SESSION_KEY_PACKET){
@@ -319,10 +507,22 @@ int main(int argc, char * argv[]){
                         }
 
                         // receive TGT
-                        if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
-                            std::cerr << "Error: Received bad packet" << std::endl;
+                        rc = recv(sock, packet, PACKET_SIZE);
+                        if (rc == PACKET_SIZE){
+                            if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                std::cerr << "Error: Could not unpack TGT" << std::endl;
+                                continue;
+                            }
+                        }
+                        else if(rc == -1){
+                            std::cerr << "Error: Received bad data" << std::endl;
                             continue;
                         }
+                        else if (rc == 0){
+                            quit = true;
+                            continue;
+                        }
+
                         if (packet[0] == TGT_PACKET){
                             tgt = new TGT(packet.substr(1, packet.size() - 1));
                         }

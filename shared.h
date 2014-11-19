@@ -75,37 +75,33 @@ const uint8_t QUIT_PACKET             = 2;                // no payload
 const uint8_t CREATE_ACCOUNT_PACKET_1 = 3;                // username (to KDC)
 const uint8_t CREATE_ACCOUNT_PACKET_2 = 4;                // PKA (to client)
 const uint8_t CREATE_ACCOUNT_PACKET_3 = 5;                // temporary password (to KDC)
-const uint8_t CREATE_ACCOUNT_PACKET_4 = 6;                // encrypted KA (to client)
-const uint8_t LOGIN_PACKET            = 7;                // username
-const uint8_t SESSION_KEY_PACKET      = 8;                // session key encrypted with user key
-const uint8_t TGT_PACKET              = 9;                // data encrypted by KDC key
-const uint8_t REQUEST_PACKET          = 10;               //
-const uint8_t AUTHENTICATOR_PACKET    = 11;               //
-const uint8_t TALK_PACKET             = 12;               //
-const uint8_t PUBLIC_KEY_PACKET       = 13;               // contains a PGP Public Key Block
+const uint8_t LOGIN_PACKET            = 6;                // username
+const uint8_t SESSION_KEY_PACKET      = 7;                // session key encrypted with user key
+const uint8_t TGT_PACKET              = 8;                // data encrypted by KDC key
+const uint8_t REQUEST_PACKET          = 9;               //
+const uint8_t AUTHENTICATOR_PACKET    = 10;               //
+const uint8_t TALK_PACKET             = 11;               //
+const uint8_t PUBLIC_KEY_PACKET       = 12;               // contains a PGP Public Key Block
 // partial packets idea taken from OpenPGP standard
-const uint8_t START_PARTIAL_PACKET    = 14;               // start of data (also type and count of partial packets?)
-const uint8_t PARTIAL_PACKET          = 15;               // middle of data
-const uint8_t END_PARTIAL_PACKET      = 16;               // end of data (could be empty?)
+const uint8_t START_PARTIAL_PACKET    = 13;               // start of data (also type and count of partial packets?)
+const uint8_t PARTIAL_PACKET          = 14;               // middle of data
+const uint8_t END_PARTIAL_PACKET      = 15;               // end of data (could be empty?)
 // const uint8_t _PACKET = ;
 
 // generate random octets
 std::string random_octets(const unsigned int count = 0);
 
 // send data and check if it was sent properly
-bool send_data(int sock, const std::string & data, const ssize_t & expected_size = PACKET_SIZE);
+int send(int sock, const std::string & data, const ssize_t & length = PACKET_SIZE);
 
 // receive data and check if all was received properly
-bool recv_data(int sock, std::string & data, const ssize_t & expected_size = PACKET_SIZE);
+int recv(int sock, std::string & data, const ssize_t & expected_size = PACKET_SIZE);
 
 // Takes some data and adds a 4 octet length to the front and pads the rest of the packet with garbage
 // returns 0 if input packet was too long
-bool packetize(const uint8_t & type, std::string & packet, const uint32_t & length = DATA_MAX_SIZE);
+bool packetize(const uint8_t & type, std::string & packet, const uint32_t & data_length = DATA_MAX_SIZE, const uint32_t & packet_length = PACKET_SIZE);
 
-// Takes packetized data and returns top packet type + data
-bool unpacketize(std::string & packet, const uint32_t & expected_size = DATA_MAX_SIZE);
-
-bool pack_and_send(int sock, const uint8_t & type, const std::string & packet, const uint32_t & length);
-bool recv_and_unpack(int sock, std::string & packet, const uint32_t & expected_size = PACKET_SIZE);
+// Takes packetized data and writes packet type + data into variable packet
+bool unpacketize(std::string & packet, const uint32_t & data_length = DATA_MAX_SIZE, const uint32_t & packet_length = PACKET_SIZE);
 
 // change all expected sizes to data size, rather than packet size?
