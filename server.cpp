@@ -307,7 +307,7 @@ void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, b
 const std::map <std::string, std::string> SERVER_HELP = {
     std::pair <std::string, std::string>("help", ""),               // print help menu
     std::pair <std::string, std::string>("quit", ""),               // stop server
-    std::pair <std::string, std::string>("save", "thread-id"),      // save database
+    std::pair <std::string, std::string>("save", ""),      // save database
     std::pair <std::string, std::string>("stop", "thread-id"),      // stop a single thread
     // std::pair <std::string, std::string>("", ""),
 };
