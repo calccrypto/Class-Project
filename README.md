@@ -7,6 +7,7 @@ Please see LICENSE file for license. The networking code
 was modified from code written by Andrew Zonenberg.
 
 POSIX libraries are required for sockets.
+C++11 threads are used instead of POSIX.
 
 OpenPGP (https://github.com/calccrypto/OpenPGP), and
 its dependencies are required to build this project.

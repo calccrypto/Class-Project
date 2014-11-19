@@ -158,39 +158,33 @@ int main(int argc, char * argv[]){
                         // }
 
                         // send request to KDC
-                        if (!pack_and_send(sock, CREATE_ACCOUNT_PACKET, username, PACKET_SIZE)){
+                        if (!pack_and_send(sock, CREATE_ACCOUNT_PACKET_1, username, PACKET_SIZE)){
                             std::cerr << "Error: Could not send request for new account" << std::endl;
                             continue;
                         }
 
                         std::cout << "Request sent to KDC" << std::endl;
-                        
+
                         // recieve failure message or public key
                         std::string packet;
                         if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
                             std::cerr << "Error: Received bad data" << packet << std::endl;
                             continue;
                         }
-                        
+
                         std::cout << "Public key started" << std::endl;
 
                         uint8_t type = packet[0];
-                        packet = packet.substr(1, packet.size() - 1);
+                        std::string pub_str = packet.substr(1, packet.size() - 1);
 
-                        std::string pub_str = "";
-
-                        if (type == PUBLIC_KEY_PACKET){
+                        if (type == CREATE_ACCOUNT_PACKET_2){
                             if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
                                 std::cerr << "Error: Received bad data" << std::endl;
                                 continue;
                             }
-                            pub_str = packet;
 
                         }
                         else if (type == START_PARTIAL_PACKET){
-                            // receive partial packet begin
-                            pub_str = packet;
-
                             // receive partial packets
                             while (type != END_PARTIAL_PACKET){
                                 if (!recv_and_unpack(sock, packet, PACKET_SIZE)){
@@ -228,11 +222,11 @@ int main(int argc, char * argv[]){
                         }
 
                         std::cout << "public key received" << std::endl;
-                        
+
                         // have KDC public key
                         PGPPublicKey pub(pub_str);
 
-                        // tell server it was recieved
+                        // tell server it was received
                         if (!verify_key(pub, pub)){
                             std::cerr << "Error: Key was not signed with given signature packet" << std::endl;
                             if (!pack_and_send(sock, FAIL_PACKET, "Error: Public key self check failed", PACKET_SIZE)){
@@ -247,6 +241,45 @@ int main(int argc, char * argv[]){
                             }
                         }
 
+                        // format hashed password
+                        packet = HASH(password).digest();
+
+                        // encrypt with PGP
+                        packet = encrypt_pka(pub, packet, "", SYM_NUM, COMPRESSION_ALGORITHM, true).write();
+
+                        // send PGP Message Block to server
+                        if (packet.size() > DATA_MAX_SIZE){
+                            // send partial packet begin
+                            if (!pack_and_send(sock, START_PARTIAL_PACKET, packet.substr(0, DATA_MAX_SIZE), PACKET_SIZE)){
+                                std::cerr << "Error: Failed to send starting partial packet" << std::endl;
+                                continue;
+                            }
+
+                            // send partial packets
+                            unsigned int i = DATA_MAX_SIZE;
+                            const unsigned int last_block = packet.size() - DATA_MAX_SIZE;
+                            while (i < last_block){
+                                if (!pack_and_send(sock, PARTIAL_PACKET, packet.substr(i, DATA_MAX_SIZE), PACKET_SIZE)){
+                                    std::cerr << "Error: Failed to send partial packet" << std::endl;
+                                    continue;
+                                }
+                                i += DATA_MAX_SIZE;
+                            }
+
+                            // send partial packet end
+                            if (!pack_and_send(sock, END_PARTIAL_PACKET, packet.substr(i, DATA_MAX_SIZE), PACKET_SIZE)){
+                                std::cerr << "Error: Failed to send ending partial packet" << std::endl;
+                                continue;
+                            }
+                        }
+                        else{ // send all at once
+                            if (!pack_and_send(sock, CREATE_ACCOUNT_PACKET_3, packet, PACKET_SIZE)){
+                                std::cerr << "Error: Could not send password to client" << std::endl;
+                                continue;
+                            }
+                        }
+
+                        std::cout << "Acoount created" << std::endl;
                         // does not automatically login after finished making new account
                     }
                     else if(input == "login"){

@@ -32,7 +32,10 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <set>
+#include <system_error>
+#include <thread>
 
 #include "../OpenPGP/OpenPGP.h"
 
@@ -46,38 +49,14 @@ const std::string private_key_file = "testKDCprivate";
 const std::string pki_key = "KDC";
 // //////////////////////////////////////////////////////
 
-// needs individual quit variable
-struct client_args{
-    int csock;
-    std::set <User> & users;
-    bool & quit;
-
-    client_args(int cs, std::set <User> & u, bool & q)
-        : csock(cs), users(u), quit(q){}
-};
-
-// needs to record all quit variables
-struct server_args{
-    pthread_mutex_t & mutex;
-    std::map <uint32_t, pthread_t> & threads;
-    bool & quit;
-    std::set <User> & users;
-
-    server_args(pthread_mutex_t & m, std::map <uint32_t, pthread_t> & t, bool & q, std::set <User> & u)
-        : mutex(m), threads(t), quit(q), users(u) {}
-};
-
 // stuff the user sees
-void * client_thread(void * args){
-    // copy arguments out
-    client_args ca = * (client_args *) args;
-    int & csock = ca.csock;
-    std::set <User> & users = ca.users;
-
+void * client_thread(int & csock, std::mutex & mutex, std::set <User> & users, bool *& quit){
+    // User's identity
     User * client = NULL;
+
     // accept commands
     std::string packet;
-    while (true){
+    while (!*quit){
         if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
             std::cerr << "Error: Received bad data" << std::endl;
             continue;
@@ -140,7 +119,7 @@ void * client_thread(void * args){
                 }
 
             }
-            else if (type == CREATE_ACCOUNT_PACKET){                    // create new account
+            else if (type == CREATE_ACCOUNT_PACKET_1){                    // create new account
                 std::string new_username = packet;
                 std::cout << "Received request for new account for " << new_username << std::endl;
 
@@ -203,12 +182,12 @@ void * client_thread(void * args){
                     }
                 }
                 else{
-                    if (!pack_and_send(csock, PUBLIC_KEY_PACKET, pub_str, PACKET_SIZE)){
+                    if (!pack_and_send(csock, CREATE_ACCOUNT_PACKET_2, pub_str, PACKET_SIZE)){
                         std::cerr << "Error: Could not send public key" << std::endl;
                         continue;
                     }
                 }
-                
+
                 std::cout << "PGP key sent" << std::endl;
 
                 // get client verification of public key
@@ -236,11 +215,91 @@ void * client_thread(void * args){
 
                 std::cout << "Received response from client" << std::endl;
 
+                // generate user id
+                // check if it has already been taken
+
+                // get client password
+                if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
+                    std::cerr << "Error: Unable to receive password from client" << std::endl;
+                    continue;
+                }
+
+                type = packet[0];
+                std::string kh = packet.substr(1, packet.size() - 1);
+
+                if (type == CREATE_ACCOUNT_PACKET_3){
+                    if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
+                        std::cerr << "Error: Received bad data" << std::endl;
+                        continue;
+                    }
+                }
+                else if (type == START_PARTIAL_PACKET){
+                    // receive partial packets
+                    while (type != END_PARTIAL_PACKET){
+                        if (!recv_and_unpack(csock, packet, PACKET_SIZE)){
+                            std::cerr << "Error: Failed to receive partial packet" << std::endl;
+                            continue;
+                        }
+
+                        type = packet[0];
+                        packet = packet.substr(1, packet.size() - 1);
+
+                        if ((type == PARTIAL_PACKET) || (type == END_PARTIAL_PACKET)){
+                            kh += packet;
+                        }
+                        else if (type == FAIL_PACKET){
+                            std::cerr << packet << std::endl;
+                            break;
+                        }
+                        else{
+                            std::cerr << "Error: Unexpected packet type received." << std::endl;
+                            break;
+                        }
+                    }
+
+                    if (type != END_PARTIAL_PACKET){
+                        std::cerr << "Error: Failed to receive ending partial packet" << std::endl;
+                        continue;
+                    }
+                }
+                else if (type == FAIL_PACKET){
+                    std::cerr << packet << std::endl;
+                    continue;
+                }
+                else{
+                    std::cerr << "Error: Unexpected packet type received." << std::endl;
+                }
+
+                // open private key file
+                std::ifstream pri_file(private_key_file, std::ios::binary);
+                PGPSecretKey pri(pri_file);
+
+                // decrypt kh
+                kh = decrypt_pka(pri, kh, secret_key, false);
+
+                // generate random KA
+                std::string KA = random_octets(KEY_SIZE >> 3);
+
+                // encrypt KA with Kh
+                KA = use_OpenPGP_CFB_encrypt(SYM_NUM, 18, KA, kh);
+                
+                // create new user
+                User new_user;
+                new_user.set_name(new_username);
+                new_user.set_timeskew(TIME_SKEW);
+                new_user.set_key(KA);
+
+                // add new user to database (in memory)
+                mutex.lock();
+                users.insert(new_user);
+                std::cout << "Added new user: " << new_username << std::endl;
+                mutex.unlock();
+
+                std::cout << "Done setting up account for " << new_username << std::endl;
+
             }
         }
     }
-
-    ca.quit = true;
 
     return NULL;
 }
@@ -248,19 +307,34 @@ void * client_thread(void * args){
 const std::map <std::string, std::string> SERVER_HELP = {
     std::pair <std::string, std::string>("help", ""),               // print help menu
     std::pair <std::string, std::string>("quit", ""),               // stop server
-    // std::pair <std::string, std::string>("stop", "thread-id"),   // stop a single thread
+    std::pair <std::string, std::string>("save", "thread-id"),      // save database
+    std::pair <std::string, std::string>("stop", "thread-id"),      // stop a single thread
     // std::pair <std::string, std::string>("", ""),
 };
 
-// admin command line
-void * server_thread(void * args){
-    // copy arguments out
-    server_args data = * (server_args *) args;
-    pthread_mutex_t & mutex = data.mutex;
-    std::map <uint32_t, pthread_t> & clients = data.threads;
-    std::set <User> & users = data.users;
-    bool & quit = data.quit;
+// write user list to file
+bool save(std::mutex & mutex, const std::string & file, const std::set <User> & users){
+    mutex.lock();
 
+    std::ofstream save(file, std::ios::binary);
+    if (!save){
+        return false;
+    }
+    // std::stringstream s;
+
+    for(User const & u : users){
+        save << u;
+        // s << u;
+    }
+    // save << HASH(s.str()).digest(); // store hash of file
+
+    mutex.unlock();
+
+    return true;
+}
+
+// admin command line
+void * server_thread(std::mutex & mutex, std::map <uint32_t, std::pair <std::thread, bool *> > & threads, bool & quit, std::set <User> & users){
     // take in and parse commands
     while (!quit){
         std::string cmd;
@@ -275,9 +349,11 @@ void * server_thread(void * args){
             }
             else if (cmd == "stop"){
                 uint32_t tid;
-                if ((s >> tid) && (clients.find(tid) != clients.end())){
-                    pthread_cancel(clients.at(tid));    // not safe (?)
-                    clients.erase(tid);
+                std::map <uint32_t, std::pair <std::thread, bool *> >::iterator it;
+                if ((s >> tid) && ((it = threads.find(tid)) != threads.end())){
+                    mutex.lock();
+                    *((it -> second).second) = true;
+                    mutex.unlock();
                 }
                 else{
                     std::cerr << "Syntax: stop tid" << std::endl;
@@ -285,21 +361,32 @@ void * server_thread(void * args){
             }
             else if (cmd == "quit"){                    // stop server
                 quit = true;
+                if (save(mutex, "user", users)){
+                    std::cout << "Database saved" << std::endl;
+                }
+                else{
+                    std::cerr << "Error: Database could not be saved" << std::endl
+                              << "Continue to exit? (y/n)";
+                    std::string q;
+                    std::cin >> q;
+                    quit = ((q == "y") || (q == "Y"));
+                }
+            }
+            else if (cmd == "save"){                    // save users into databsse
+                if (save(mutex, "user", users)){
+                    std::cout << "Database saved" << std::endl;
+                }
+                else{
+                    std::cerr << "Error: Database could not be saved" << std::endl;
+                }
             }
             else{
                 std::cerr << "Error: Unknown command \"" << cmd << "\"" << std::endl;
             }
         }
     }
+
     // Ending server
-
-    // terminate threads
-    // while (clients.size()){
-        // pthread_cancel(clients.begin().second);  // not safe (?)
-        // clients.erase(clients.begin().first);
-    // }
-
-
     return NULL;
 }
 
@@ -373,16 +460,18 @@ int main(int argc, char * argv[]){
     }
 
     // put together variables to pass into administrator thread
-    pthread_mutex_t mutex;                                      // global mutex
-    std::map <uint32_t, pthread_t> threads;   // list of running threads
+    std::mutex mutex;
+    std::map <uint32_t, std::pair <std::thread, bool *> > threads;   // list of running threads (need to keep track of)
     bool quit = false;
-    server_args s_args(mutex, threads, quit, users);
 
-    // start administrator command line thread
-    pthread_t admin;
-    if (pthread_create(&admin, NULL, server_thread, (void *) &s_args) != 0){
-        std::cerr << "Unable to start administrator command line" << std::endl;
-        return 0;
+    // start administrator command line thread (necessary)
+    std::thread admin;
+    try{
+       admin = std::thread(server_thread, std::ref(mutex), std::ref(threads), std::ref(quit), std::ref(users));
+    }
+    catch (std::system_error & sys_err){
+        std::cerr << "Could not create thread due to: " << sys_err.what() << std::endl;
+        return -1;
     }
 
     uint32_t thread_count = 0;
@@ -394,25 +483,27 @@ int main(int argc, char * argv[]){
         if(csock < 0)    //bad client, skip it
             continue;
 
-        client_args ca(csock, users, quit);
-
+        mutex.lock();
         // start thread
-        // keep on trying to create thread
-        while (pthread_create(&threads[thread_count++], NULL, client_thread, (void *) &ca));
-        pthread_mutex_lock(&mutex);
-        std::cout << "Thread " << thread_count << " started." << std::endl;
-        pthread_mutex_unlock(&mutex);
+        try{
+            bool * quit = new bool(false);
+            threads[thread_count] = std::pair <std::thread, bool *> (std::thread(client_thread, std::ref(csock), std::ref(mutex), std::ref(users), std::ref(quit)), quit);
+            std::cout << "Thread " << thread_count << " started." << std::endl;
+            thread_count++;
+        }
+        catch (std::system_error & sys_err){
+            std::cerr << "Could not create thread due to: " << sys_err.what() << std::endl;
+        }
+        // // keep on trying to create thread
+
+        mutex.unlock();
     }
 
-    // write user list to file
-    std::ofstream save("user", std::ios::binary);
-    for(User const & u : users){
-        save << u;
+    // wait for all threads to stop
+    for(std::pair <const uint32_t, std::pair <std::thread, bool *> > & t : threads){
+        t.second.first.join();
+        delete t.second.second;
     }
-
-    // write to backup
-    std::ofstream backup("user.back", std::ios::binary);
-    backup << save.rdbuf();
 
     close(lsock);
     return 0;

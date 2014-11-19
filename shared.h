@@ -35,7 +35,6 @@ file for full license.
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
-#include <pthread.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -50,38 +49,44 @@ file for full license.
 
 #include "TGT.h"
 
-const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1};           // 127.0.0.1
-const uint16_t DEFAULT_PORT = 45678;                                // Ephemeral port
-const uint32_t PACKET_SIZE = 256;                                   // 256 octets
-const uint32_t PACKET_HEADER_SIZE = 1;                              // 1 octet
-const uint32_t PACKET_SIZE_INDICATOR = 4;                           // 4 octets
-const uint32_t DATA_MAX_SIZE = PACKET_SIZE                          // max size of payload in octets
+const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1};     // 127.0.0.1
+const uint16_t DEFAULT_PORT = 45678;                          // Ephemeral port
+const uint32_t PACKET_SIZE = 256;                             // 256 octets
+const uint32_t PACKET_HEADER_SIZE = 1;                        // 1 octet
+const uint32_t PACKET_SIZE_INDICATOR = 4;                     // 4 octets
+const uint32_t DATA_MAX_SIZE = PACKET_SIZE                    // max size of payload in octets
                                     - PACKET_HEADER_SIZE
                                     - PACKET_SIZE_INDICATOR;
-const uint32_t TIME_SKEW = 300000;                                  // milliseconds (5 minutes)
+const uint32_t TIME_SKEW = 300000;                            // milliseconds (5 minutes)
 
-typedef AES SYM;                                                    // default symmetric key algorithm
-const unsigned int KEY_SIZE = 256;                                  // symmetric key algorithm key size (bits)
-const unsigned int BLOCK_SIZE = SYM().blocksize();                  // symmetric key algorithm block size (bits)
-typedef SHA256 HASH;                                                // default hashing algorithm
-const unsigned int DIGEST_SIZE = HASH().digestsize();               // hashing algorithm output size (bits)
+typedef AES SYM;                                                                // default symmetric key algorithm for use without OpenPGP
+const uint8_t SYM_NUM = 9;                                                      // default symmetric key algorithm OpenPGP number: AES256
+const std::string SYM_NAME = Symmetric_Algorithms.at(SYM_NUM);                  // default symmetric key algorithm name
+const unsigned int KEY_SIZE = Symmetric_Algorithm_Key_Length.at(SYM_NAME);      // symmetric key algorithm key size (bits)
+const unsigned int BLOCK_SIZE = Symmetric_Algorithm_Block_Length.at(SYM_NAME);  // symmetric key algorithm block size (bits)
+typedef SHA256 HASH;                                                            // default hashing algorithm for use without OpenPGP
+const unsigned int DIGEST_SIZE = HASH().digestsize();                           // hashing algorithm output size (bits)
+const uint8_t COMPRESSION_ALGORITHM = 1;                                        // default compression algorithm: ZLIB
 
-// Packet Type                                                      // payload
-const uint8_t FAIL_PACKET           = 0;                            // message
-const uint8_t SUCCESS_PACKET        = 1;                            // message (?)
-const uint8_t QUIT_PACKET           = 2;                            // no payload
-const uint8_t CREATE_ACCOUNT_PACKET = 3;                            // username
-const uint8_t LOGIN_PACKET          = 4;                            // username
-const uint8_t SESSION_KEY_PACKET    = 5;                            // session key encrypted with user key
-const uint8_t TGT_PACKET            = 6;                            // data encrypted by KDC key
-const uint8_t REQUEST_PACKET        = 7;                            //
-const uint8_t AUTHENTICATOR_PACKET  = 8;                            //
-const uint8_t TALK_PACKET           = 9;                            //
-const uint8_t PUBLIC_KEY_PACKET     = 9;                            // contains a PGP Public Key Block
+// Packet Type                                            // payload
+const uint8_t FAIL_PACKET             = 0;                // message
+const uint8_t SUCCESS_PACKET          = 1;                // message (?)
+const uint8_t QUIT_PACKET             = 2;                // no payload
+const uint8_t CREATE_ACCOUNT_PACKET_1 = 3;                // username (to KDC)
+const uint8_t CREATE_ACCOUNT_PACKET_2 = 4;                // PKA (to client)
+const uint8_t CREATE_ACCOUNT_PACKET_3 = 5;                // temporary password (to KDC)
+const uint8_t CREATE_ACCOUNT_PACKET_4 = 6;                // encrypted KA (to client)
+const uint8_t LOGIN_PACKET            = 7;                // username
+const uint8_t SESSION_KEY_PACKET      = 8;                // session key encrypted with user key
+const uint8_t TGT_PACKET              = 9;                // data encrypted by KDC key
+const uint8_t REQUEST_PACKET          = 10;               //
+const uint8_t AUTHENTICATOR_PACKET    = 11;               //
+const uint8_t TALK_PACKET             = 12;               //
+const uint8_t PUBLIC_KEY_PACKET       = 13;               // contains a PGP Public Key Block
 // partial packets idea taken from OpenPGP standard
-const uint8_t START_PARTIAL_PACKET  = 10;                           // start of data (also count of partial packets?)
-const uint8_t PARTIAL_PACKET        = 11;                           // middle of data
-const uint8_t END_PARTIAL_PACKET    = 12;                           // end of data (could be empty?)
+const uint8_t START_PARTIAL_PACKET    = 14;               // start of data (also type and count of partial packets?)
+const uint8_t PARTIAL_PACKET          = 15;               // middle of data
+const uint8_t END_PARTIAL_PACKET      = 16;               // end of data (could be empty?)
 // const uint8_t _PACKET = ;
 
 // generate random octets
