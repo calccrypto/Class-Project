@@ -1,10 +1,7 @@
 Fix OpenPGP encrypt/decrypt hash bug
-
-send packet length before sending packet to avoid having to break up packet
-or make all packets really long to avoid breaking up packets
-
+send packet length before sending packet to avoid having to break up packet or make all packets really long to avoid breaking up packets
 hide user input when typing in password
-
 make crashing safer
-
 stop waiting if failed to packetize/unpacketize
+Make server stopping also force client (not client thread; that is already done) to stop
+Figure out why server thread won't stop after typing in quit

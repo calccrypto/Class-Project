@@ -62,7 +62,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
         int rc = recv(csock, packet, PACKET_SIZE);
         if (rc == PACKET_SIZE){
             if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
-                std::cerr << "Error: Received baaad data" << std::endl;
+                std::cerr << "Error: Received bad data" << std::endl;
                 continue;
             }
         }
@@ -82,10 +82,12 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
 
         // quit works no matter what
         if (type == QUIT_PACKET){
+            std::cout << "Received command to quit" << std::endl;
             // clean up data
             delete client;
             client = NULL;
-            break;
+            *quit = true;
+            continue;
         }
 
         // parse input
@@ -518,7 +520,6 @@ bool save(std::mutex & mutex, const std::string & file, const std::set <User> & 
     // save << HASH(s.str()).digest(); // store hash of file
 
     mutex.unlock();
-
     return true;
 }
 
@@ -530,6 +531,21 @@ void * server_thread(std::mutex & mutex, std::map <uint32_t, std::pair <std::thr
         std::cout << "> ";
         std::getline(std::cin, cmd);
         std::stringstream s; s << cmd;
+        // find terminated threads and remove them from the running threads list
+        // there is probably a better way (timer?)
+        for(std::pair <const uint32_t, std::pair <std::thread, bool *> > & thread_it : threads){
+            if (*((thread_it.second).second)){
+                mutex.lock();
+                if (thread_it.second.second){
+                    *(thread_it.second.second) = true;  // tell thread to shut down if it hasn't already been
+                }
+                (thread_it.second).first.join();        // wait for thread to end
+                delete thread_it.second.second;         // free pointer
+                threads.erase(thread_it.first);         // remove thread from list of running threads
+                mutex.unlock();
+            }
+        }
+
         if (s >> cmd){
             if (cmd == "help"){
                 for(std::pair <std::string, std::string> const & cmd : SERVER_HELP){
@@ -541,14 +557,20 @@ void * server_thread(std::mutex & mutex, std::map <uint32_t, std::pair <std::thr
                 std::map <uint32_t, std::pair <std::thread, bool *> >::iterator it;
                 if ((s >> tid) && ((it = threads.find(tid)) != threads.end())){
                     mutex.lock();
-                    *((it -> second).second) = true;
+                    if ((it -> second).second){
+                        *((it -> second).second) = true;    // tell thread to shut down if it hasn't already been
+                    }
+                    (it -> second).first.join();            // wait for thread to end
+                    delete (it -> second).second;           // free pointer
+                    (it -> second).second = NULL;           // set to NULL just in case
+                    threads.erase(it -> first);             // remove thread from list of running threads
                     mutex.unlock();
                 }
                 else{
                     std::cerr << "Syntax: stop tid" << std::endl;
                 }
             }
-            else if (cmd == "quit"){                    // stop server
+            else if (cmd == "quit"){                        // stop server
                 quit = true;
                 if (save(mutex, "user", users)){
                     std::cout << "Database saved" << std::endl;
@@ -560,8 +582,9 @@ void * server_thread(std::mutex & mutex, std::map <uint32_t, std::pair <std::thr
                     std::cin >> q;
                     quit = ((q == "y") || (q == "Y"));
                 }
+                continue;
             }
-            else if (cmd == "save"){                    // save users into databsse
+            else if (cmd == "save"){                        // save users into databsse
                 if (save(mutex, "user", users)){
                     std::cout << "Database saved" << std::endl;
                 }
@@ -571,13 +594,40 @@ void * server_thread(std::mutex & mutex, std::map <uint32_t, std::pair <std::thr
             }
             else if (cmd == "list"){
                 for(std::pair <const uint32_t, std::pair <std::thread, bool *> > & t : threads){
-                    std::cout << t.first << " " << t.second.first.get_id() << std::endl;
+                    if (*(t.second.second)){                // if the thread has been stopped already
+                        mutex.lock();
+                        if (t.second.second){
+                            *(t.second.second) = true;      // tell thread to shut down if it hasn't already been
+                        }
+                        (t.second).first.join();            // wait for thread to end
+                        delete t.second.second;             // free pointer
+                        t.second.second = NULL;             // set to NULL just in case
+                        threads.erase(t.first);             // remove thread from list of running threads
+                        mutex.unlock();
+                    }
+                    else                                    // otherwise, print
+                    {
+                        std::cout << t.first << " " << t.second.first.get_id() << std::endl;
+                    }
                 }
             }
             else{
                 std::cerr << "Error: Unknown command \"" << cmd << "\"" << std::endl;
             }
         }
+    }
+
+    // force all clients to end
+    for(std::pair <const uint32_t, std::pair <std::thread, bool *> > & thread_it : threads){
+        mutex.lock();
+        if (thread_it.second.second){
+            *(thread_it.second.second) = true;          // tell thread to shut down if it hasn't already been
+        }
+        (thread_it.second).first.join();                // wait for thread to end
+        delete thread_it.second.second;                 // free pointer
+        thread_it.second.second = NULL;                 // set to NULL just in case
+        threads.erase(thread_it.first);                 // remove thread from list of running threads
+        mutex.unlock();
     }
 
     // Ending server
@@ -680,8 +730,8 @@ int main(int argc, char * argv[]){
         mutex.lock();
         // start thread
         try{
-            bool * quit = new bool(false);
-            threads[thread_count] = std::pair <std::thread, bool *> (std::thread(client_thread, std::ref(csock), thread_count, std::ref(mutex), std::ref(users), std::ref(quit)), quit);
+            bool * thread_quit = new bool(false);
+            threads[thread_count] = std::pair <std::thread, bool *> (std::thread(client_thread, std::ref(csock), thread_count, std::ref(mutex), std::ref(users), std::ref(thread_quit)), thread_quit);
             std::cout << "Thread " << thread_count << " started." << std::endl;
             thread_count++;
         }
@@ -693,12 +743,15 @@ int main(int argc, char * argv[]){
         mutex.unlock();
     }
 
-    // wait for all threads to stop
+    // wait for all threads to stop (if the server thread did not already stop them)
     for(std::pair <const uint32_t, std::pair <std::thread, bool *> > & t : threads){
+        *(t.second.second) = true;
         t.second.first.join();
         delete t.second.second;
     }
 
+    admin.join();
+    
     close(lsock);
     return 0;
 }

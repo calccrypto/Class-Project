@@ -103,8 +103,10 @@ int main(int argc, char * argv[]){
     while (!quit){
         std::string input;
         std::cout << "> ";
-        std::cin >> input;
-
+        std::getline(std::cin, input);
+        std::stringstream s; s << input;
+        s >> input;
+        
         int rc;
         std::string packet;
 
@@ -313,7 +315,7 @@ int main(int argc, char * argv[]){
                                 else {
                                     std::cerr << "Error: Not all data sent" << std::endl;
                                 }
-                                std::cerr << "Error: Could not send failurer message" << std::endl;
+                                std::cerr << "Error: Could not send failure message" << std::endl;
                                 continue;
                             }
 
@@ -441,7 +443,7 @@ int main(int argc, char * argv[]){
                             }
                         }
 
-                        std::cout << "Acoount created" << std::endl;
+                        std::cout << "Account created" << std::endl;
                         // does not automatically login after finished making new account
                     }
                     else if(input == "login"){

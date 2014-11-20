@@ -39,6 +39,7 @@ file for full license.
 #include <unistd.h>
 
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
