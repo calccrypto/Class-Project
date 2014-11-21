@@ -50,9 +50,9 @@ file for full license.
 
 #include "TGT.h"
 
-const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1};     // 127.0.0.1
-const uint16_t DEFAULT_PORT = 45678;                          // Ephemeral port
-const int32_t TIME_SKEW = 300;                                // seconds (5 minutes)
+const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1}; // 127.0.0.1
+const uint16_t DEFAULT_PORT = 45678;                      // Ephemeral port
+const int32_t TIME_SKEW = 300;                            // seconds (5 minutes)
 
 typedef AES SYM;                                                                // default symmetric key algorithm for use without OpenPGP
 const uint8_t SYM_NUM = 9;                                                      // default symmetric key algorithm OpenPGP number: AES256
@@ -65,10 +65,10 @@ const uint8_t COMPRESSION_ALGORITHM = 1;                                        
 const uint32_t RESYNC = 18;                                                     // OpenPGP packet tag 18 triggers resync
 
 
-const uint32_t PACKET_SIZE = BLOCK_SIZE >> 2;                 // 2 blocks per packet
-const uint32_t PACKET_HEADER_SIZE = 1;                        // 1 octet
-const uint32_t PACKET_SIZE_INDICATOR = 4;                     // 4 octets
-const uint32_t DATA_MAX_SIZE = PACKET_SIZE                    // max size of payload in octets
+const uint32_t PACKET_SIZE = BLOCK_SIZE >> 2;             // 2 blocks per packet
+const uint32_t PACKET_HEADER_SIZE = 1;                    // 1 octet
+const uint32_t PACKET_SIZE_INDICATOR = 4;                 // 4 octets
+const uint32_t DATA_MAX_SIZE = PACKET_SIZE                // max size of payload in octets
                                     - PACKET_HEADER_SIZE
                                     - PACKET_SIZE_INDICATOR;
 
@@ -86,25 +86,37 @@ const uint8_t REQUEST_PACKET          = 9;                // target name
 const uint8_t TICKET_PACKET           = 10;               // E_{SA}(target, S_AB, E_{K_B}(client, S_AB))
 const uint8_t AUTHENTICATOR_PACKET    = 11;               //
 const uint8_t TALK_PACKET             = 12;               //
-const uint8_t PUBLIC_KEY_PACKET       = 13;               // a PGP Public Key Block
+const uint8_t INITIAL_SEND_PACKET     = 13;               // 4 octet packet count
+const uint8_t PUBLIC_KEY_PACKET       = 14;               // a PGP Public Key Block
 // partial packets idea taken from OpenPGP standard
-const uint8_t START_PARTIAL_PACKET    = 14;               // start of data (also type and count of partial packets?)
-const uint8_t PARTIAL_PACKET          = 15;               // middle of data
-const uint8_t END_PARTIAL_PACKET      = 16;               // end of data (could be empty?)
+const uint8_t START_PARTIAL_PACKET    = 15;               // start of data (also type and count of partial packets?)
+const uint8_t PARTIAL_PACKET          = 16;               // middle of data
+const uint8_t END_PARTIAL_PACKET      = 17;               // end of data (could be empty?)
 // const uint8_t _PACKET = ;
+
 
 // generate random octets
 std::string random_octets(const unsigned int count = 0);
 
-// send data and check if it was sent properly
-int send(int sock, const std::string & data, const ssize_t & length = PACKET_SIZE);
+// send single packet and check if it was sent properly
+int send(int sock, const std::string & data);
 
-// receive data and check if all was received properly
-int recv(int sock, std::string & data, const ssize_t & expected_size = PACKET_SIZE);
+// receive single packet and check if all was received properly
+int recv(int sock, std::string & data);
 
 // Takes some data and adds a 4 octet length to the front and pads the rest of the packet with garbage
-// returns 0 if input packet was too long
-bool packetize(const uint8_t & type, std::string & packet, const uint32_t & data_length = DATA_MAX_SIZE, const uint32_t & packet_length = PACKET_SIZE);
+// returns false if input packet was too long
+bool packetize(const uint8_t & type, std::string & packet);
 
 // Takes packetized data and writes packet type + data into variable packet
-bool unpacketize(std::string & packet, const uint32_t & data_length = DATA_MAX_SIZE, const uint32_t & packet_length = PACKET_SIZE);
+bool unpacketize(std::string & packet);
+
+int network_message(const int & rc);
+
+// pack and send multiple packets worth of data
+int send_packets(int sock, const std::string & data);
+
+// receive and unpack multiple packets of data
+int recv_packets(int sock, std::string & data);
+
+// probably also want encrypted send/recv
