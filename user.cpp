@@ -7,17 +7,15 @@ User::User(const User & u)
     : /*uid(u.uid),*/ timeskew(u.timeskew), name(u.name), key(u.key), loggedin(u.loggedin) {
 }
 
-User::User(std::string & formatted)
+User::User(const std::string & formatted)
     : User() {
     // uid = toint(formatted.substr(0, 4), 256);
-    formatted = "0000" + formatted;
-
-    timeskew = toint(formatted.substr(4, 8), 256);
-    size_t name_len = toint(formatted.substr(12, 4), 256);
-    name = formatted.substr(16, name_len);
-    size_t key_len = toint(formatted.substr(16 + name_len, 4), 256);
-    key = formatted.substr(20 + name_len, key_len);
-    formatted = formatted.substr(20 + name_len + key_len, formatted.size() - (20 + name_len + key_len));
+    std::string f = "0000" + formatted;
+    timeskew = toint(f.substr(4, 8), 256);
+    size_t name_len = toint(f.substr(12, 4), 256);
+    name = f.substr(16, name_len);
+    size_t key_len = toint(f.substr(16 + name_len, 4), 256);
+    key = f.substr(20 + name_len, key_len);
 
     loggedin = false;
 }

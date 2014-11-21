@@ -190,7 +190,6 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                     continue;
                 }
             }
-
         }
         else{                               // if not logged in, only allow for creating account and logging in
             if (type == LOGIN_PACKET){
@@ -503,19 +502,21 @@ bool save_users(std::mutex & mutex, const std::string & file, const std::set <Us
     // database file format:
     //
     // cleartext = (for all users
-    //  4 octets - N = user data length
-    //  N octets - user data
-    //  DIGEST_SIZE >> 3 octets hash of current user data
+    //   4 octets - N = user data length
+    //   N octets - user data
+    //   DIGEST_SIZE >> 3 octets hash of current user data
     // )
     //
     // Encrypt with KDC key(cleartext + hash(cleartext))
     //
+
     std::string users_str = "";
     for(User const & u : users){
         std::string user = u.str();
         user = unhexlify(makehex(user.size(), 8)) + user;
         users_str += user + HASH(user).digest();
     }
+
     users_str += HASH(users_str).digest();
 
     // encrypt data
@@ -531,36 +532,47 @@ bool save_users(std::mutex & mutex, const std::string & file, const std::set <Us
 bool read_users(std::mutex & mutex, const std::string & file, std::set <User> & users, const std::string & key){
     std::ifstream save(file, std::ios::binary);
     if (!save){
-        std::cerr << "Error: Could not open file \"" << file << "\"" << std::endl;
-        return false;
+        std::cerr << "Warning: Could not open file \"" << file << "\" - creating file" << std::endl;
+        if (!std::ofstream(file, std::ios::binary)){
+            std::cerr << "Error: Could not create file \"" << file << "\"" << std::endl;
+            return false;
+        }
+        return true;
     }
 
+    // copy all data into string
     std::stringstream fs; fs << save.rdbuf();
-
     std::string users_str = fs.str();
     if (!users_str.size()){ // nothing in file
         return true;
     }
 
+    // decrypt data
     users_str = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, users_str, key);
 
-    if (HASH(users_str.substr(0, users_str.size() - (DIGEST_SIZE >> 3))).digest() != users_str.substr(users_str.size() - (DIGEST_SIZE >> 3), DIGEST_SIZE)){
-        std::cerr << "Error: Checksum does not match" << std::endl;
+    // remove CFB padding
+    users_str = users_str.substr((BLOCK_SIZE >> 3) + 2, users_str.size() - (BLOCK_SIZE >> 3) - 2);
+
+    uint32_t DS = DIGEST_SIZE >> 3;
+
+    if (HASH(users_str.substr(0, users_str.size() - DS)).digest() != users_str.substr(users_str.size() - DS, DS)){
+        std::cerr << "Error: File checksum does not match" << std::endl;
         return false;
     }
+    // remove checksum
+    users_str = users_str.substr(0, users_str.size() - DS);
 
     unsigned int i = 0;
     while (i < users_str.size()){
-        uint32_t len = toint(users_str.substr(i, 4), 256);
-        std::string data = users_str.substr(i + 4, len);
+        uint32_t N = toint(users_str.substr(i, 4), 256);
         // if record matches, save it
-        if (HASH(data).digest() == users_str.substr(i + 4 + len, DIGEST_SIZE >> 3)){
-            users.insert(User(data));
+        if (HASH(users_str.substr(i, N + 4)).digest() == users_str.substr(i + 4 + N, DS)){
+            users.insert(User(users_str.substr(i + 4, N)));
         }
         else{
-            std::cout << "Warning: Record for " << User(data).get_name() << " corrupted" << std::endl;
+            std::cout << "Warning: Found corrupted record" << std::endl;
         }
-        i += 4 + len + (DIGEST_SIZE >> 3);
+        i += 4 + N + DS;
     }
     mutex.unlock();
     return true;
@@ -685,7 +697,7 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
             }
             else if (cmd == "users"){
                 for(User const & u : users){
-                    std::cout << u.get_name() << " " << u.get_key() << std::endl;
+                    std::cout << u.get_name() << " " << hexlify(u.get_key()) << std::endl;
                 }
             }
             else{
@@ -702,7 +714,6 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
         ptr = NULL;
     }
 
-    save_users(mutex, users_file, users, secret_key);
     std::cout << "Server thread end" << std::endl;
     // End server
     return NULL;

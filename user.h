@@ -53,7 +53,7 @@ class User {
     public:
         User();
         User(const User & u);
-        User(std::string & formatted); // input is consumed
+        User(const std::string & formatted); 
         User(/*const uint32_t & UID,*/ const uint64_t & TIMESKEW, const std::string & NAME, const std::string KEY);
 
         // Modifiers
