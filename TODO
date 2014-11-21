@@ -5,3 +5,7 @@ make crashing safer
 stop waiting if failed to packetize/unpacketize
 Make server stopping also force client (not client thread; that is already done) to stop
 Figure out why server thread won't stop after typing in quit
+Make it so that when one side fails, the other side resets
+currently not taking care of most cases when packets are larger than PACKET_SIZE
+remove debug messages(after coding is done)
+change error messages to be more generic (to avoid account enumeration and other attacks)

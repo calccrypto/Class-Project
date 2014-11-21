@@ -29,6 +29,7 @@ The networking code using POSIX sockets (Lines 61 - 104) was written by Andrew Z
 under the 3-Clause BSD License. Please see LICENSE file for full license.
 */
 
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -40,6 +41,7 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include "../OpenPGP/OpenPGP.h"
 
 #include "shared.h"
+#include "threaddata.h"
 #include "user.h"
 
 // move these to file or something///////////////////////
@@ -52,14 +54,14 @@ const std::string pki_key = "KDC";
 // stuff the user sees
 // need to prevent user from logging in multiple times at once
 // need to check for disconnect as well as bad packet
-void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex, std::set <User> & users, bool *& quit){
+void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
     // User's identity
     User * client = NULL;
 
     // accept commands
     std::string packet;
-    while (!*quit){
-        int rc = recv(csock, packet, PACKET_SIZE);
+    while (!quit && !(args -> get_quit())){
+        int rc = recv(args -> get_sock(), packet, PACKET_SIZE);
         if (rc == PACKET_SIZE){
             if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
                 std::cerr << "Error: Received bad data" << std::endl;
@@ -71,7 +73,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
             continue;
         }
         else if (rc == 0){
-            *quit = true;
+            args -> set_quit(true);
             continue;
         }
 
@@ -86,12 +88,152 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
             // clean up data
             delete client;
             client = NULL;
-            *quit = true;
+            args -> set_quit(true);
             continue;
         }
 
         // parse input
-        if (client){                        // if identity is established
+        if (client){                            // if identity is established
+            if (type == REQUEST_PACKET){        // client wants to talk to someone
+                if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                    std::cerr << "Error: Could not unpack data" << std::endl;
+                    continue;
+                }
+                packet = use_OpenPGP_CFB_decrypt(SYM_NUM, 18, packet, client -> get_key());
+
+                std::string md = packet.substr(packet.size() - (DIGEST_SIZE >> 3), DIGEST_SIZE >> 3);
+                packet = packet.substr(0, packet.size() - (DIGEST_SIZE >> 3));
+                if (HASH(packet).digest() != md){
+                    std::cerr << "Error: Hash of data does not match given checksum" << std::endl;
+                    continue;
+                }
+
+                uint32_t t_len = toint(packet.substr(0, 4), 256);         // length of target name
+                std::string target = packet.substr(4, t_len);             // target name
+                uint32_t ts = toint(packet.substr(4 + t_len, 4), 256);    // timestamp
+                uint32_t tgt_len = toint(packet.substr(8 + t_len, 4));    // TGT length
+                TGT tgt(packet.substr(12 + t_len, tgt_len));              // parse TGT
+
+                // check timstamp
+                // need to check values; computations might not be correct
+                if (abs((now()) - ts) > TIME_SKEW){
+                    // send "bad timestamp" to client
+                    packet = "Error: Timestamp has expired";
+                    if (!packetize(FAIL_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                        std::cerr << "Error: Could not pack data" << std::endl;
+                        continue;
+                    }
+                    rc = send(args -> get_sock(), packet, PACKET_SIZE);
+                    if (rc != PACKET_SIZE){
+                        if(rc == -1){
+                            std::cerr << "Error: Cannot send data" << std::endl;
+                        }
+                        else if (rc == 0){
+                            quit = true;
+                        }
+                        else {
+                            std::cerr << "Error: Not all data sent" << std::endl;
+                        }
+                        std::cerr << "Error: Could not send failure packet" << std::endl;
+                    }
+                    continue;
+                }
+
+                // check if both people are online
+                std::map <ThreadData *, std::thread>::iterator target_thread = args -> get_threads() -> begin();
+                while (target_thread != args -> get_threads() -> end()){
+                    if ((target_thread -> first -> get_name() == target) && !(target_thread -> first -> get_quit())){
+                        break;
+                    }
+                    target_thread++;
+                }
+
+                if (target_thread == args -> get_threads() -> end()){
+                    // send client error message saying target not online
+                    std::cerr << "Error: Target not found" << std::endl;
+
+                    packet = "Error: Target not online";
+                    if (!packetize(FAIL_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                        std::cerr << "Error: Could not pack data" << std::endl;
+                        continue;
+                    }
+                    rc = send(args -> get_sock(), packet, PACKET_SIZE);
+                    if (rc != PACKET_SIZE){
+                        if(rc == -1){
+                            std::cerr << "Error: Cannot send data" << std::endl;
+                        }
+                        else if (rc == 0){
+                            quit = true;
+                        }
+                        else {
+                            std::cerr << "Error: Not all data sent" << std::endl;
+                        }
+                        std::cerr << "Error: Could not send failure packet" << std::endl;
+                    }
+                    continue;
+                }
+
+                // send success packet
+                packet = "";
+                if (!packetize(SUCCESS_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                    std::cerr << "Error: Could not pack data" << std::endl;
+                    continue;
+                }
+                rc = send(args -> get_sock(), packet, PACKET_SIZE);
+                if (rc != PACKET_SIZE){
+                    if(rc == -1){
+                        std::cerr << "Error: Cannot send data" << std::endl;
+                    }
+                    else if (rc == 0){
+                        quit = true;
+                    }
+                    else {
+                        std::cerr << "Error: Not all data sent" << std::endl;
+                    }
+                    std::cerr << "Error: Could not send success packet" << std::endl;
+                    continue;
+                }
+
+                // generate session key for clients
+                std::string S_AB = random_octets(KEY_SIZE);
+
+                // find target's shared key
+                std::string K_B;
+                for(User const & u : *(args -> get_users())){
+                    if (u == target_thread ->  first -> get_name()){
+                        K_B = u.get_key();
+                    }
+                }
+
+                // create ticket for target
+                std::string ticket = unhexlify(makehex((client -> get_name()).size(), 8)) + client -> get_name() + S_AB;
+                ticket = use_OpenPGP_CFB_encrypt(SYM_NUM, 18, ticket, K_B);
+
+                // create ticket for client
+                ticket = unhexlify(makehex(target.size(), 8)) + target + S_AB;
+                ticket = use_OpenPGP_CFB_encrypt(SYM_NUM, 18, ticket, client -> get_key());
+
+                // send ticket to client
+                packet = ticket;
+                if (!packetize(SUCCESS_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                    std::cerr << "Error: Could not pack data" << std::endl;
+                    continue;
+                }
+                rc = send(args -> get_sock(), packet, PACKET_SIZE);
+                if (rc != PACKET_SIZE){
+                    if(rc == -1){
+                        std::cerr << "Error: Cannot send data" << std::endl;
+                    }
+                    else if (rc == 0){
+                        quit = true;
+                    }
+                    else {
+                        std::cerr << "Error: Not all data sent" << std::endl;
+                    }
+                    std::cerr << "Error: Could not send success packet" << std::endl;
+                    continue;
+                }
+            }
 
         }
         else{                               // if not logged in, only allow for creating account and logging in
@@ -100,7 +242,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                 std::string username = packet;
 
                 // search "database" for user
-                for(User const & u : users){
+                for(User const & u : *(args -> get_users())){
                     if (u == username){
                         *client = u;
                         break;
@@ -116,13 +258,13 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                         std::cerr << "Error: Could not pack data" << std::endl;
                         continue;
                     }
-                    rc = send(csock, packet, PACKET_SIZE);
+                    rc = send(args -> get_sock(), packet, PACKET_SIZE);
                     if (rc != PACKET_SIZE){
                         if(rc == -1){
                             std::cerr << "Error: Cannot send data" << std::endl;
                         }
                         else if (rc == 0){
-                            *quit = true;
+                            args -> set_quit(true);
                         }
                         else {
                             std::cerr << "Error: Not all data sent" << std::endl;
@@ -141,13 +283,13 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                     std::cerr << "Error: Could not pack data" << std::endl;
                     continue;
                 }
-                rc = send(csock, packet, PACKET_SIZE);
+                rc = send(args -> get_sock(), packet, PACKET_SIZE);
                 if (rc != PACKET_SIZE){
                     if(rc == -1){
                         std::cerr << "Error: Cannot send data" << std::endl;
                     }
                     else if (rc == 0){
-                        *quit = true;
+                        args -> set_quit(true);
                     }
                     else {
                         std::cerr << "Error: Not all data sent" << std::endl;
@@ -161,13 +303,13 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                 data = SYM(secret_key).encrypt(data);                   // need to add hash
 
                 packet = data;
-                rc = send(csock, packet, PACKET_SIZE);
+                rc = send(args -> get_sock(), packet, PACKET_SIZE);
                 if (rc != PACKET_SIZE){
                     if(rc == -1){
                         std::cerr << "Error: Cannot send data" << std::endl;
                     }
                     else if (rc == 0){
-                        *quit = true;
+                        args -> set_quit(true);
                     }
                     else {
                         std::cerr << "Error: Not all data sent" << std::endl;
@@ -182,7 +324,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
 
                 // search for user in database
                 bool exists = false;
-                for(User const & u : users){
+                for(User const & u : *(args -> get_users())){
                     if (u == new_username){
                         exists = true;
                         break;
@@ -196,13 +338,13 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                         std::cerr << "Error: Could not pack data" << std::endl;
                         continue;
                     }
-                    rc = send(csock, packet, PACKET_SIZE);
+                    rc = send(args -> get_sock(), packet, PACKET_SIZE);
                     if (rc != PACKET_SIZE){
                         if(rc == -1){
                             std::cerr << "Error: Cannot send data" << std::endl;
                         }
                         else if (rc == 0){
-                            *quit = true;
+                            args -> set_quit(true);
                         }
                         else {
                             std::cerr << "Error: Not all data sent" << std::endl;
@@ -222,13 +364,13 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                         std::cerr << "Error: Could not pack data" << std::endl;
                         continue;
                     }
-                    rc = send(csock, packet, PACKET_SIZE);
+                    rc = send(args -> get_sock(), packet, PACKET_SIZE);
                     if (rc != PACKET_SIZE){
                         if(rc == -1){
                             std::cerr << "Error: Cannot send data" << std::endl;
                         }
                         else if (rc == 0){
-                            *quit = true;
+                            args -> set_quit(true);
                         }
                         else {
                             std::cerr << "Error: Not all data sent" << std::endl;
@@ -251,13 +393,13 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                         std::cerr << "Error: Could notaaa pack data" << std::endl;
                         continue;
                     }
-                    rc = send(csock, packet, PACKET_SIZE);
+                    rc = send(args -> get_sock(), packet, PACKET_SIZE);
                     if (rc != PACKET_SIZE){
                         if(rc == -1){
                             std::cerr << "Error: Cannot send data" << std::endl;
                         }
                         else if (rc == 0){
-                            *quit = true;
+                            args -> set_quit(true);
                         }
                         else {
                             std::cerr << "Error: Not all data sent" << std::endl;
@@ -274,13 +416,13 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                             std::cerr << "Error: Could not pack data" << std::endl;
                             continue;
                         }
-                        rc = send(csock, packet, PACKET_SIZE);
+                        rc = send(args -> get_sock(), packet, PACKET_SIZE);
                         if (rc != PACKET_SIZE){
                             if(rc == -1){
                                 std::cerr << "Error: Cannot send data" << std::endl;
                             }
                             else if (rc == 0){
-                                *quit = true;
+                                args -> set_quit(true);
                             }
                             else {
                                 std::cerr << "Error: Not all data sent" << std::endl;
@@ -297,13 +439,13 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                         std::cerr << "Error: Could not pack data" << std::endl;
                         continue;
                     }
-                    rc = send(csock, packet, PACKET_SIZE);
+                    rc = send(args -> get_sock(), packet, PACKET_SIZE);
                     if (rc != PACKET_SIZE){
                         if(rc == -1){
                             std::cerr << "Error: Cannot send data" << std::endl;
                         }
                         else if (rc == 0){
-                            *quit = true;
+                            args -> set_quit(true);
                         }
                         else {
                             std::cerr << "Error: Not all data sent" << std::endl;
@@ -318,13 +460,13 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                         std::cerr << "Error: Could not pack data" << std::endl;
                         continue;
                     }
-                    rc = send(csock, packet, PACKET_SIZE);
+                    rc = send(args -> get_sock(), packet, PACKET_SIZE);
                     if (rc != PACKET_SIZE){
                         if(rc == -1){
                             std::cerr << "Error: Cannot send data" << std::endl;
                         }
                         else if (rc == 0){
-                            *quit = true;
+                            args -> set_quit(true);
                         }
                         else {
                             std::cerr << "Error: Not all data sent" << std::endl;
@@ -337,7 +479,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                 std::cout << "PGP key sent" << std::endl;
 
                 // get client verification of public key
-                rc = recv(csock, packet, PACKET_SIZE);
+                rc = recv(args -> get_sock(), packet, PACKET_SIZE);
                 if (rc == PACKET_SIZE){
                     if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
                         std::cerr << "Error: Unable to receive verification from client" << std::endl;
@@ -349,7 +491,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                     continue;
                 }
                 else if (rc == 0){
-                    *quit = true;
+                    args -> set_quit(true);
                     continue;
                 }
 
@@ -376,7 +518,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                 // check if it has already been taken
 
                 // get client password
-                rc = recv(csock, packet, PACKET_SIZE);
+                rc = recv(args -> get_sock(), packet, PACKET_SIZE);
                 if (rc == PACKET_SIZE){
                     if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
                         std::cerr << "Error: Unable to unpack client password" << std::endl;
@@ -388,7 +530,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                     continue;
                 }
                 else if (rc == 0){
-                    *quit = true;
+                    args -> set_quit(true);
                     continue;
                 }
 
@@ -396,7 +538,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                 std::string kh = packet.substr(1, packet.size() - 1);
 
                 if (type == CREATE_ACCOUNT_PACKET_3){
-                    rc = recv(csock, packet, PACKET_SIZE);
+                    rc = recv(args -> get_sock(), packet, PACKET_SIZE);
                     if (rc == PACKET_SIZE){
                         if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
                             std::cerr << "Error: Could not unpack new account name" << std::endl;
@@ -408,14 +550,14 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                         continue;
                     }
                     else if (rc == 0){
-                        *quit = true;
+                        args -> set_quit(true);
                         continue;
                     }
                 }
                 else if (type == START_PARTIAL_PACKET){
                     // receive partial packets
                     while (type != END_PARTIAL_PACKET){
-                        rc = recv(csock, packet, PACKET_SIZE);
+                        rc = recv(args -> get_sock(), packet, PACKET_SIZE);
                         if (rc == PACKET_SIZE){
                             if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
                                 std::cerr << "Error: Could not unpack partial packets" << std::endl;
@@ -427,7 +569,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
                             continue;
                         }
                         else if (rc == 0){
-                            *quit = true;
+                            args -> set_quit(true);
                             continue;
                         }
 
@@ -481,7 +623,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
 
                 // add new user to database (in memory)
                 mutex.lock();
-                users.insert(new_user);
+                args -> get_users() -> insert(new_user);
                 std::cout << "Added new user: " << new_username << std::endl;
                 mutex.unlock();
 
@@ -490,7 +632,7 @@ void * client_thread(int & csock, const uint32_t & thread_id, std::mutex & mutex
             }
         }
     }
-    std::cout << "Thread " << thread_id << " terminated" << std::endl;
+    std::cout << "Thread " << args -> get_thread_id() << " terminated" << std::endl;
     return NULL;
 }
 
@@ -523,48 +665,53 @@ bool save(std::mutex & mutex, const std::string & file, const std::set <User> & 
     return true;
 }
 
+unsigned int clean_threads(std::map <ThreadData *, std::thread> & threads, std::mutex & mutex){
+    unsigned int deleted = 0;
+    for(std::pair <ThreadData * const, std::thread> & t : threads){
+        if (t.first -> get_quit()){
+            mutex.lock();
+            t.second.join();
+            ThreadData * temp = t.first;
+            threads.erase(temp);
+            delete temp;
+            deleted++;
+            mutex.unlock();
+        }
+    }
+    return deleted;
+}
+
 // admin command line
-void * server_thread(std::mutex & mutex, std::map <uint32_t, std::pair <std::thread, bool *> > & threads, bool & quit, std::set <User> & users){
+void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <User> & users, std::mutex & mutex, bool & quit){
     // take in and parse commands
     while (!quit){
         std::string cmd;
         std::cout << "> ";
         std::getline(std::cin, cmd);
         std::stringstream s; s << cmd;
-        // find terminated threads and remove them from the running threads list
-        // there is probably a better way (timer?)
-        for(std::pair <const uint32_t, std::pair <std::thread, bool *> > & thread_it : threads){
-            if (*((thread_it.second).second)){
-                mutex.lock();
-                if (thread_it.second.second){
-                    *(thread_it.second.second) = true;  // tell thread to shut down if it hasn't already been
-                }
-                (thread_it.second).first.join();        // wait for thread to end
-                delete thread_it.second.second;         // free pointer
-                threads.erase(thread_it.first);         // remove thread from list of running threads
-                mutex.unlock();
-            }
-        }
+
+        clean_threads(threads, mutex);
 
         if (s >> cmd){
-            if (cmd == "help"){
+            if (cmd == "help"){                             // help menu
                 for(std::pair <std::string, std::string> const & cmd : SERVER_HELP){
                     std::cout << cmd.first << " " << cmd.second << std::endl;
                 }
             }
-            else if (cmd == "stop"){
+            else if (cmd == "stop"){                        // stop a single thread
                 uint32_t tid;
-                std::map <uint32_t, std::pair <std::thread, bool *> >::iterator it;
-                if ((s >> tid) && ((it = threads.find(tid)) != threads.end())){
-                    mutex.lock();
-                    if ((it -> second).second){
-                        *((it -> second).second) = true;    // tell thread to shut down if it hasn't already been
+                if (s >> tid){
+                    // linear search unfortunately
+                    std::map <ThreadData *, std::thread>::iterator it = threads.begin();
+                    while(it != threads.end()){
+                        if (it -> first -> get_thread_id() == tid){
+                            it -> first -> set_quit(true);
+                            it -> second.join();
+                        }
+                        else{
+                            it++;
+                        }
                     }
-                    (it -> second).first.join();            // wait for thread to end
-                    delete (it -> second).second;           // free pointer
-                    (it -> second).second = NULL;           // set to NULL just in case
-                    threads.erase(it -> first);             // remove thread from list of running threads
-                    mutex.unlock();
                 }
                 else{
                     std::cerr << "Syntax: stop tid" << std::endl;
@@ -593,21 +740,12 @@ void * server_thread(std::mutex & mutex, std::map <uint32_t, std::pair <std::thr
                 }
             }
             else if (cmd == "list"){
-                for(std::pair <const uint32_t, std::pair <std::thread, bool *> > & t : threads){
-                    if (*(t.second.second)){                // if the thread has been stopped already
-                        mutex.lock();
-                        if (t.second.second){
-                            *(t.second.second) = true;      // tell thread to shut down if it hasn't already been
-                        }
-                        (t.second).first.join();            // wait for thread to end
-                        delete t.second.second;             // free pointer
-                        t.second.second = NULL;             // set to NULL just in case
-                        threads.erase(t.first);             // remove thread from list of running threads
-                        mutex.unlock();
+                for(std::pair <ThreadData * const, std::thread> & t : threads){
+                    if (t.first -> get_quit()){         // if thread has already quit, remove it from list
                     }
-                    else                                    // otherwise, print
+                    else                                        // otherwise, print
                     {
-                        std::cout << t.first << " " << t.second.first.get_id() << std::endl;
+                        std::cout << t.first -> get_thread_id() << " " << t.second.get_id() << std::endl;
                     }
                 }
             }
@@ -618,19 +756,11 @@ void * server_thread(std::mutex & mutex, std::map <uint32_t, std::pair <std::thr
     }
 
     // force all clients to end
-    for(std::pair <const uint32_t, std::pair <std::thread, bool *> > & thread_it : threads){
-        mutex.lock();
-        if (thread_it.second.second){
-            *(thread_it.second.second) = true;          // tell thread to shut down if it hasn't already been
-        }
-        (thread_it.second).first.join();                // wait for thread to end
-        delete thread_it.second.second;                 // free pointer
-        thread_it.second.second = NULL;                 // set to NULL just in case
-        threads.erase(thread_it.first);                 // remove thread from list of running threads
-        mutex.unlock();
-    }
+    // std::map <ThreadData *, std::thread>::iterator it = threads.begin();
+    // while(it != threads.end()){
+    // }
 
-    // Ending server
+    // End server
     return NULL;
 }
 
@@ -704,14 +834,14 @@ int main(int argc, char * argv[]){
     }
 
     // put together variables to pass into administrator thread
-    std::mutex mutex;
-    std::map <uint32_t, std::pair <std::thread, bool *> > threads;   // list of running threads (need to keep track of)
-    bool quit = false;
+    std::map <ThreadData *, std::thread> threads;   // list of running threads (need to keep track of)
+    std::mutex mutex;                               // global mutex
+    bool quit = false;                              // global quit controlled by admin
 
     // start administrator command line thread (necessary)
     std::thread admin;
     try{
-       admin = std::thread(server_thread, std::ref(mutex), std::ref(threads), std::ref(quit), std::ref(users));
+       admin = std::thread(server_thread, std::ref(threads), std::ref(users), std::ref(mutex), std::ref(quit));
     }
     catch (std::system_error & sys_err){
         std::cerr << "Could not create thread due to: " << sys_err.what() << std::endl;
@@ -730,8 +860,14 @@ int main(int argc, char * argv[]){
         mutex.lock();
         // start thread
         try{
-            bool * thread_quit = new bool(false);
-            threads[thread_count] = std::pair <std::thread, bool *> (std::thread(client_thread, std::ref(csock), thread_count, std::ref(mutex), std::ref(users), std::ref(thread_quit)), thread_quit);
+            ThreadData * t_data = new ThreadData;
+            t_data -> set_sock(csock);
+            t_data -> set_thread_id(thread_count);
+            t_data -> set_users(&users);
+            t_data -> set_threads(&threads);
+            t_data -> set_quit(false);
+
+            threads[t_data] = std::thread(client_thread, t_data, std::ref(mutex), std::ref(quit));
             std::cout << "Thread " << thread_count << " started." << std::endl;
             thread_count++;
         }
@@ -744,14 +880,16 @@ int main(int argc, char * argv[]){
     }
 
     // wait for all threads to stop (if the server thread did not already stop them)
-    for(std::pair <const uint32_t, std::pair <std::thread, bool *> > & t : threads){
-        *(t.second.second) = true;
-        t.second.first.join();
-        delete t.second.second;
+    for(std::pair <ThreadData * const, std::thread> & t : threads){
+        t.first -> set_quit(true);
+        t.second.join();
+        ThreadData * temp = t.first;
+        threads.erase(t.first);
+        delete temp;
     }
 
     admin.join();
-    
+
     close(lsock);
     return 0;
 }

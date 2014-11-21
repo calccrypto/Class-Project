@@ -103,10 +103,8 @@ int main(int argc, char * argv[]){
     while (!quit){
         std::string input;
         std::cout << "> ";
-        std::getline(std::cin, input);
-        std::stringstream s; s << input;
-        s >> input;
-        
+        std::cin >> input;
+
         int rc;
         std::string packet;
 
@@ -144,8 +142,8 @@ int main(int argc, char * argv[]){
             }
         }
         else{
-            std::stringstream tokens; tokens << input;
-            if (tokens >> input){
+            // std::stringstream tokens; tokens << input;
+            // if (tokens >> input){
                 if (session_key){ // if logged in
                     if (input == "change"){
                         // change username or password
@@ -153,8 +151,71 @@ int main(int argc, char * argv[]){
                     }
                     else if (input == "talk"){
                         std::string target;
+                        std::cout << "Target: ";
                         std::cin >> target;
+
+                        // format data to send to KDC
+                        // 4 octets - M = size of target name
+                        // M octets - target name
+                        // 4 octets - timestamp
+                        // 4 octets - N = size of TGT
+                        // N octets - TGT
+                        // (DIGEST_SIZE >> 3) octets - hash of all of above
+                        packet = unhexlify(makehex(target.size(), 8)) + target + unhexlify(makehex(now(), 8));
+
+                        // append TGT
+                        std::string tgt_str = tgt -> str();
+                        packet += unhexlify(makehex(tgt_str.size(), 8)) + tgt_str;
+
+                        // hash everything
+                        packet += HASH(packet).digest();
+
+                        // encrypt data with SA
+                        packet = use_OpenPGP_CFB_encrypt(SYM_NUM, 18, packet, *session_key);
+
+                        // put data into a packet
+                        if (!packetize(REQUEST_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                            std::cerr << "Error: Could not pack data" << std::endl;
+                            continue;
+                        }
                         // send request to KDC to talk to target
+                        rc = send(sock, packet, PACKET_SIZE);
+                        if (rc != PACKET_SIZE){
+                            if(rc == -1){
+                                std::cerr << "Error: Cannot send data" << std::endl;
+                            }
+                            else if (rc == 0){
+                                quit = true;
+                            }
+                            else {
+                                std::cerr << "Error: Not all data sent" << std::endl;
+                            }
+                            std::cerr << "Error: Could not send request to talk" << std::endl;
+                            continue;
+                        }
+
+                        std::cout << "Talk request sent to KDC" << std::endl;
+
+                        // receive status packet
+
+                        rc = recv(sock, packet, PACKET_SIZE);
+                        if (rc == PACKET_SIZE){
+                            if (!unpacketize(packet, DATA_MAX_SIZE, PACKET_SIZE)){
+                                std::cerr << "Error: Could not unpack status packet" << std::endl;
+                                continue;
+                            }
+                        }
+                        else if(rc == -1){
+                            std::cerr << "Error: Received bad data" << std::endl;
+                            continue;
+                        }
+                        else if (rc == 0){
+                            quit = true;
+                            continue;
+                        }
+                        std::cout << "Received response from target search" << std::endl;
+                        
+                        
                     }
                     else if (input == "logout"){
                         delete session_key;
@@ -202,7 +263,7 @@ int main(int argc, char * argv[]){
                             std::cerr << "Error: Could not send request for new account" << std::endl;
                             continue;
                         }
-
+                        
                         std::cout << "Request sent to KDC" << std::endl;
 
                         // recieve failure message or public key
@@ -543,7 +604,7 @@ int main(int argc, char * argv[]){
                         std::cerr << "Error: Unknown input: " << input << std::endl;
                     }
                 }
-            }
+            // }
         }
     }
 

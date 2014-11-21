@@ -52,13 +52,13 @@ file for full license.
 
 const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1};     // 127.0.0.1
 const uint16_t DEFAULT_PORT = 45678;                          // Ephemeral port
-const uint32_t PACKET_SIZE = 256;                             // 256 octets
+const uint32_t PACKET_SIZE = 1024;                            // 1024 octets
 const uint32_t PACKET_HEADER_SIZE = 1;                        // 1 octet
 const uint32_t PACKET_SIZE_INDICATOR = 4;                     // 4 octets
 const uint32_t DATA_MAX_SIZE = PACKET_SIZE                    // max size of payload in octets
                                     - PACKET_HEADER_SIZE
                                     - PACKET_SIZE_INDICATOR;
-const uint32_t TIME_SKEW = 300000;                            // milliseconds (5 minutes)
+const int32_t TIME_SKEW = 300;                                // seconds (5 minutes)
 
 typedef AES SYM;                                                                // default symmetric key algorithm for use without OpenPGP
 const uint8_t SYM_NUM = 9;                                                      // default symmetric key algorithm OpenPGP number: AES256
@@ -79,14 +79,15 @@ const uint8_t CREATE_ACCOUNT_PACKET_3 = 5;                // temporary password 
 const uint8_t LOGIN_PACKET            = 6;                // username
 const uint8_t SESSION_KEY_PACKET      = 7;                // session key encrypted with user key
 const uint8_t TGT_PACKET              = 8;                // data encrypted by KDC key
-const uint8_t REQUEST_PACKET          = 9;               //
-const uint8_t AUTHENTICATOR_PACKET    = 10;               //
-const uint8_t TALK_PACKET             = 11;               //
-const uint8_t PUBLIC_KEY_PACKET       = 12;               // contains a PGP Public Key Block
+const uint8_t REQUEST_PACKET          = 9;                // target name
+const uint8_t TICKET_PACKET           = 10;               // E_{SA}(target, S_AB, E_{K_B}(client, S_AB))
+const uint8_t AUTHENTICATOR_PACKET    = 11;               //
+const uint8_t TALK_PACKET             = 12;               //
+const uint8_t PUBLIC_KEY_PACKET       = 13;               // a PGP Public Key Block
 // partial packets idea taken from OpenPGP standard
-const uint8_t START_PARTIAL_PACKET    = 13;               // start of data (also type and count of partial packets?)
-const uint8_t PARTIAL_PACKET          = 14;               // middle of data
-const uint8_t END_PARTIAL_PACKET      = 15;               // end of data (could be empty?)
+const uint8_t START_PARTIAL_PACKET    = 14;               // start of data (also type and count of partial packets?)
+const uint8_t PARTIAL_PACKET          = 15;               // middle of data
+const uint8_t END_PARTIAL_PACKET      = 16;               // end of data (could be empty?)
 // const uint8_t _PACKET = ;
 
 // generate random octets
@@ -104,5 +105,3 @@ bool packetize(const uint8_t & type, std::string & packet, const uint32_t & data
 
 // Takes packetized data and writes packet type + data into variable packet
 bool unpacketize(std::string & packet, const uint32_t & data_length = DATA_MAX_SIZE, const uint32_t & packet_length = PACKET_SIZE);
-
-// change all expected sizes to data size, rather than packet size?
