@@ -45,6 +45,7 @@ file for full license.
 #include <iostream>
 #include <map>
 #include <sstream>
+#include <vector>
 
 #include "../OpenPGP/OpenPGP.h" // Encryptions and Hashes
 
@@ -88,10 +89,11 @@ const uint8_t AUTHENTICATOR_PACKET    = 11;               //
 const uint8_t TALK_PACKET             = 12;               //
 const uint8_t INITIAL_SEND_PACKET     = 13;               // 4 octet packet count
 const uint8_t PUBLIC_KEY_PACKET       = 14;               // a PGP Public Key Block
+const uint8_t SYM_ENCRYPTED_PACKET    = 15;               // symmetrically encrypted data
 // partial packets idea taken from OpenPGP standard
-const uint8_t START_PARTIAL_PACKET    = 15;               // start of data (also type and count of partial packets?)
-const uint8_t PARTIAL_PACKET          = 16;               // middle of data
-const uint8_t END_PARTIAL_PACKET      = 17;               // end of data (could be empty?)
+const uint8_t START_PARTIAL_PACKET    = 16;               // start of data (also type and count of partial packets?)
+const uint8_t PARTIAL_PACKET          = 17;               // middle of data
+const uint8_t END_PARTIAL_PACKET      = 18;               // end of data (could be empty?)
 // const uint8_t _PACKET = ;
 
 
@@ -114,9 +116,9 @@ bool unpacketize(std::string & packet);
 int network_message(const int & rc);
 
 // pack and send multiple packets worth of data
-int send_packets(int sock, const std::string & data);
+int send_packets(int sock, const uint8_t & type, const std::string & data);
 
 // receive and unpack multiple packets of data
-int recv_packets(int sock, std::string & data);
+int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & data);
 
 // probably also want encrypted send/recv

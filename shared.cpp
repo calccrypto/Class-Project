@@ -64,8 +64,8 @@ int network_message(const int & rc){
 }
 
 int send_packets(int sock, const uint8_t & type, const std::string & data){
-    // send initial packet
-    std::string packet = unhexlify(makehex(data.size(), 8));
+    // send initial packet - specifies number of octets and type
+    std::string packet = unhexlify(makehex(data.size(), 8)) + std::string(1, type);
     if (!packetize(INITIAL_SEND_PACKET, packet)){
         return -1;
     }
@@ -94,7 +94,7 @@ int send_packets(int sock, const uint8_t & type, const std::string & data){
     return data.size();
 }
 
-int recv_packets(int sock, const uint8_t & type, std::string & data){
+int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & data){
     // recv initial packet
     std::string packet;
     int rc = recv(sock, packet);
@@ -111,8 +111,23 @@ int recv_packets(int sock, const uint8_t & type, std::string & data){
         return -1;
     }
 
-    uint32_t octets = toint(packet.substr(1, 4), 256);  // get length of data
-    data = "";                                          // clear out buffer
+    const uint32_t octets = toint(packet.substr(1, 4), 256);    // get length of data
+    const uint8_t expected_type = packet[5];                    // get expected type
+
+    bool allowed = false;
+    for(uint8_t const & t : types){
+        if (expected_type == t){
+            allowed = true;
+            break;
+        }
+    }
+    
+    if (!allowed){
+        std::cerr << "Error: Received unexpected packet type" << std::endl;
+        return -1;
+    }
+    
+    data = std::string(1, expected_type);                        // set first character as type
 
     while (data.size() < octets){
         rc = recv(sock, packet);
@@ -124,8 +139,8 @@ int recv_packets(int sock, const uint8_t & type, std::string & data){
             return -1;
         }
 
-        if (packet[0] != type){
-            std::cerr << "Error: Unexpected packet type" << std::endl;
+        if (packet[0] != expected_type){
+            std::cerr << "Error: Received unexpected packet type" << std::endl;
             return -1;
         }
     }

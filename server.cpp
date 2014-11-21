@@ -64,13 +64,8 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
     // accept commands
     std::string packet;
     while (!quit && !(args -> get_quit()) && rc){
-        int rc = recv(args -> get_sock(), packet);
-        if ((rc = recv(args -> get_sock(), packet)) < 1){
+        if ((rc = recv_packets(args -> get_sock(), {QUIT_PACKET, CREATE_ACCOUNT_PACKET_1, LOGIN_PACKET,}, packet)) < 1){
             std::cerr << "Error: Could not receive data" << std::endl;
-            continue;
-        }
-        if (!unpacketize(packet)){
-            std::cerr << "Error: Received bad data" << std::endl;
             continue;
         }
         // get packet type
@@ -91,10 +86,6 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
         // parse input
         if (client){                            // if identity is established
             if (type == REQUEST_PACKET){        // client wants to talk to someone
-                if (!unpacketize(packet)){
-                    std::cerr << "Error: Could not unpack data" << std::endl;
-                    continue;
-                }
                 packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet, client -> get_key());
 
                 std::string md = packet.substr(packet.size() - (DIGEST_SIZE >> 3), DIGEST_SIZE >> 3);
@@ -115,11 +106,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 if (abs(now() - ts) > TIME_SKEW){
                     // send "bad timestamp" to client
                     packet = "Error: Timestamp has expired";
-                    if (!packetize(FAIL_PACKET, packet)){
-                        std::cerr << "Error: Could not pack data" << std::endl;
-                        continue;
-                    }
-                    if ((rc = send(args -> get_sock(), packet)) < 1){
+                    if ((rc = send_packets(args -> get_sock(), packet)) < 1){
                         std::cerr << "Error: Could not send failure packet" << std::endl;
                     }
                     continue;
@@ -139,11 +126,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                     std::cerr << "Error: Target not found" << std::endl;
 
                     packet = "Error: Target not online";
-                    if (!packetize(FAIL_PACKET, packet)){
-                        std::cerr << "Error: Could not pack data" << std::endl;
-                        continue;
-                    }
-                    if ((rc = send(args -> get_sock(), packet)) < 1){
+                    if ((rc = send_packets(args -> get_sock(), packet)) < 1){
                         std::cerr << "Error: Could not send failure packet" << std::endl;
                     }
                     continue;
@@ -151,11 +134,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
                 // send success packet
                 packet = "";
-                if (!packetize(SUCCESS_PACKET, packet)){
-                    std::cerr << "Error: Could not pack data" << std::endl;
-                    continue;
-                }
-                if ((rc = send(args -> get_sock(), packet)) < 1){
+                if ((rc = send_packets(args -> get_sock(), packet)) < 1){
                     std::cerr << "Error: Could not send success packet" << std::endl;
                     continue;
                 }
@@ -181,11 +160,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
                 // send ticket to client
                 packet = ticket;
-                if (!packetize(SUCCESS_PACKET, packet)){
-                    std::cerr << "Error: Could not pack data" << std::endl;
-                    continue;
-                }
-                if ((rc = send(args -> get_sock(), packet)) < 1){
+                if ((rc = send_packets(args -> get_sock(), packet)) < 1){
                     std::cerr << "Error: Could not send success packet" << std::endl;
                     continue;
                 }
@@ -197,54 +172,35 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 // get username
                 std::string username = packet;
 
-                // search "database" for user
+                // search database for user
                 for(std::set <User>::iterator it = args -> get_users() -> begin(); it != args -> get_users() -> end(); it++){
                     if (*it == username){
                         client = new User(*it);
                         break;
                     }
                 }
-
-                std::cout << "Done searching" << std::endl;
-                std::string data; // generic place to put data; change later on
-
-                // person not found in database
-                if (!client){
-                    packet = "Error: Could not find user";
-                    if (!packetize(FAIL_PACKET, packet)){
-                        std::cerr << "Error: Could not pack data" << std::endl;
-                        continue;
-                    }
-                    if ((rc = send(args -> get_sock(), packet)) < 1){
+                if (!client){// person not found in database
+                    packet = "Error: Could not find username";
+                    if ((rc = send_packets(args -> get_sock(), FAILURE_PACKET, packet)) < 1){
                         std::cerr << "Error: Could not send error message" << std::endl;
                     }
                     continue;
                 }
-
-                std::cout << "Found user" << std::endl;
-
-                // generate session key (encrypted with user key)
-                std::string session_key = random_octets(KEY_SIZE >> 3); // session key
-                data = SYM(client -> get_key()).encrypt(data);          // need to add hash
-
+                
+                // send session key
                 std::cout << "Sending session key" << std::endl;
-                packet = data;
-                if (!packetize(SESSION_KEY_PACKET, packet)){
-                    std::cerr << "Error: Could not pack data" << std::endl;
-                    continue;
-                }
-                if ((rc = send(args -> get_sock(), packet)) < 1){
+                packet = random_octets(KEY_SIZE >> 3); // session key
+                packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, client -> get_key(), random_octets(BLOCK_SIZE >> 3));     // encrypt session key with user's shared key
+                if ((rc = send_packets(args -> get_sock(), SESSION_KEY_PACKET, packet)) < 1){
                     std::cerr << "Error: Could not send session_key" << std::endl;
                     continue;
                 }
 
+                // send TGT (encrypted with session key)
                 std::cout << "sending TGT" << std::endl;
-                // send TGT (encrypted with server key)
-                data = TGT(username, session_key, now(), TIME_SKEW).str();
-                data = SYM(secret_key).encrypt(data);                   // need to add hash
-
-                packet = data;
-                if ((rc = send(args -> get_sock(), packet)) < 1){
+                packet = TGT(username, session_key, now(), TIME_SKEW).str();
+                packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, session_key, random_octets(BLOCK_SIZE >> 3));
+                if ((rc = send_packets(args -> get_sock(), TGT_PACKET packet)) < 1){
                     std::cerr << "Error: Could not send TGT" << std::endl;
                     continue;
                 }
@@ -265,11 +221,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 // don't allow duplicate names until unique IDs are properly implemented
                 if (exists){
                     packet = "Error: User already exists";
-                    if (!packetize(FAIL_PACKET, packet)){
-                        std::cerr << "Error: Could not pack data" << std::endl;
-                        continue;
-                    }
-                    if ((rc = send(args -> get_sock(), packet)) < 1){
+                    if ((rc = send_packets(args -> get_sock(), packet)) < 1){
                         std::cerr << "Error: Request for TGT Failed" << std::endl;
                     }
                     continue;
@@ -281,11 +233,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 if (!pub_file){
                     std::cerr << "Could not open public key file \"" << public_key_file << "\"" << std::endl;
                     packet = "Error: Could not open public key";
-                    if (!packetize(FAIL_PACKET, packet)){
-                        std::cerr << "Error: Could not pack data" << std::endl;
-                        continue;
-                    }
-                    if ((rc = send(args -> get_sock(), packet)) < 1){
+                    if ((rc = send_packets(args -> get_sock(), packet)) < 1){
                         std::cerr << "Error: Could not send error message" << std::endl;
                     }
                     continue;
@@ -295,67 +243,65 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
                 // Parse key file to remove garbage
                 PGPPublicKey pub(pub_file);
-                std::string pub_str = pub.write();
-
-                if (pub_str.size() > DATA_MAX_SIZE){
-                    // send partial packet begin
-                    packet = pub_str.substr(0, DATA_MAX_SIZE);
-                    if (!packetize(START_PARTIAL_PACKET, packet)){
-                        std::cerr << "Error: Could notaaa pack data" << std::endl;
-                        continue;
-                    }
-                    if ((rc = send(args -> get_sock(), packet)) < 1){
-                        std::cerr << "Error: Failed to send starting partial packet" << std::endl;
-                        continue;
-                    }
-                    // send partial packets
-                    unsigned int i = DATA_MAX_SIZE;
-                    const unsigned int last_block = pub_str.size() - DATA_MAX_SIZE;
-                    while (i < last_block){
-                        packet = pub_str.substr(i, DATA_MAX_SIZE);
-                        if (!packetize(PARTIAL_PACKET, packet)){
-                            std::cerr << "Error: Could not pack data" << std::endl;
-                            continue;
-                        }
-                        if ((rc = send(args -> get_sock(), packet)) < 1){
-                            std::cerr << "Error: Failed to send partial packet" << std::endl;
-                            continue;
-                        }
-                        i += DATA_MAX_SIZE;
-                    }
-
-                    // send partial packet end
-                    packet = pub_str.substr(i, DATA_MAX_SIZE);
-                    if (!packetize(END_PARTIAL_PACKET, packet)){
-                        std::cerr << "Error: Could not pack data" << std::endl;
-                        continue;
-                    }
-                    if ((rc = send(args -> get_sock(), packet)) < 1){
-                        std::cerr << "Error: Failed to send ending partial packet" << std::endl;
-                        continue;
-                    }
+                if ((rc = send_packet(args -> get_sock(), PUBLIC_KEY_PACKET, pub.write())) < 1){
+                    std::cerr << "Error: Could not send public key" << std::endl;
                 }
-                else{
-                    packet = pub_str;
-                    if (!packetize(CREATE_ACCOUNT_PACKET_2, packet)){
-                        std::cerr << "Error: Could not pack data" << std::endl;
-                        continue;
-                    }
-                    if ((rc = send(args -> get_sock(), packet)) < 1){
-                        std::cerr << "Error: Could not send public key" << std::endl;
-                        continue;
-                    }
-                }
+
+                // if (pub_str.size() > DATA_MAX_SIZE){
+                    // // send partial packet begin
+                    // packet = pub_str.substr(0, DATA_MAX_SIZE);
+                    // if (!packetize(START_PARTIAL_PACKET, packet)){
+                        // std::cerr << "Error: Could notaaa pack data" << std::endl;
+                        // continue;
+                    // }
+                    // if ((rc = send_packets(args -> get_sock(), packet)) < 1){
+                        // std::cerr << "Error: Failed to send starting partial packet" << std::endl;
+                        // continue;
+                    // }
+                    // // send partial packets
+                    // unsigned int i = DATA_MAX_SIZE;
+                    // const unsigned int last_block = pub_str.size() - DATA_MAX_SIZE;
+                    // while (i < last_block){
+                        // packet = pub_str.substr(i, DATA_MAX_SIZE);
+                        // if (!packetize(PARTIAL_PACKET, packet)){
+                            // std::cerr << "Error: Could not pack data" << std::endl;
+                            // continue;
+                        // }
+                        // if ((rc = send_packets(args -> get_sock(), packet)) < 1){
+                            // std::cerr << "Error: Failed to send partial packet" << std::endl;
+                            // continue;
+                        // }
+                        // i += DATA_MAX_SIZE;
+                    // }
+
+                    // // send partial packet end
+                    // packet = pub_str.substr(i, DATA_MAX_SIZE);
+                    // if (!packetize(END_PARTIAL_PACKET, packet)){
+                        // std::cerr << "Error: Could not pack data" << std::endl;
+                        // continue;
+                    // }
+                    // if ((rc = send_packets(args -> get_sock(), packet)) < 1){
+                        // std::cerr << "Error: Failed to send ending partial packet" << std::endl;
+                        // continue;
+                    // }
+                // }
+                // else{
+                    // packet = pub_str;
+                    // if (!packetize(CREATE_ACCOUNT_PACKET_2, packet)){
+                        // std::cerr << "Error: Could not pack data" << std::endl;
+                        // continue;
+                    // }
+                    // if ((rc = send_packets(args -> get_sock(), packet)) < 1){
+                        // std::cerr << "Error: Could not send public key" << std::endl;
+                        // continue;
+                    // }
+                // }
 
                 std::cout << "PGP key sent" << std::endl;
 
                 // get client verification of public key
-                if ((rc = recv(args -> get_sock(), packet)) < 1){
+                if ((rc = recv_packets(args -> get_sock(), packet)) < 1){
                     std::cerr << "Error: Could not receive client verification of public key" << std::endl;
-                    continue;
-                }
-                if (!unpacketize(packet)){
-                    std::cerr << "Error: Unable to receive verification from client" << std::endl;
                     continue;
                 }
                 type = packet[0];
@@ -381,37 +327,24 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 // check if it has already been taken
 
                 // get client password
-                if ((rc = recv(args -> get_sock(), packet)) < 1){
+                if ((rc = recv_packets(args -> get_sock(), packet)) < 1){
                     std::cerr <<"Error: Could not get client password" << std::endl;
 
                 }
-                if (!unpacketize(packet)){
-                    std::cerr << "Error: Unable to unpack client password" << std::endl;
-                    continue;
-                }
-
                 type = packet[0];
                 std::string kh = packet.substr(1, packet.size() - 1);
 
                 if (type == CREATE_ACCOUNT_PACKET_3){
-                    if ((rc = recv(args -> get_sock(), packet)) < 1){
+                    if ((rc = recv_packets(args -> get_sock(), packet)) < 1){
                         std::cerr << "Error: Could not receive packet" << std::endl;
-                        continue;
-                    }
-                    if (!unpacketize(packet)){
-                        std::cerr << "Error: Could not unpack new account name" << std::endl;
                         continue;
                     }
                 }
                 else if (type == START_PARTIAL_PACKET){
                     // receive partial packets
                     while (type != END_PARTIAL_PACKET){
-                        if ((rc = recv(args -> get_sock(), packet)) < 1){
+                        if ((rc = recv_packets(args -> get_sock(), packet)) < 1){
                             std::cout << "Error: Could not receive partial packet" << std::endl;
-                            continue;
-                        }
-                        if (!unpacketize(packet)){
-                            std::cerr << "Error: Could not unpack partial packets" << std::endl;
                             continue;
                         }
 
@@ -490,12 +423,11 @@ const std::map <std::string, std::string> SERVER_HELP = {
 };
 
 // write user data to file
-bool save_users(std::mutex & mutex, const std::string & file, const std::set <User> & users, const std::string & key){
-    mutex.lock();
+bool save_users(std::mutex & mutex, std::ofstream & save, const std::set <User> & users, const std::string & key){
+    std::lock_guard<std::mutex> lock(mutex);
 
-    std::ofstream save(file, std::ios::binary);
     if (!save){
-        std::cerr << "Error: Could not open file \"" << file << "\"" << std::endl;
+        std::cerr << "Error: Bad file stream" << std::endl;
         return false;
     }
 
@@ -524,20 +456,25 @@ bool save_users(std::mutex & mutex, const std::string & file, const std::set <Us
 
     save << users_str;
 
-    mutex.unlock();
     return true;
 }
 
-// read user data from file
-bool read_users(std::mutex & mutex, const std::string & file, std::set <User> & users, const std::string & key){
-    std::ifstream save(file, std::ios::binary);
+bool save_users(std::mutex & mutex, const std::string & file, const std::set <User> & users, const std::string & key){
+    std::ofstream save(file, std::ios::binary);
     if (!save){
-        std::cerr << "Warning: Could not open file \"" << file << "\" - creating file" << std::endl;
-        if (!std::ofstream(file, std::ios::binary)){
-            std::cerr << "Error: Could not create file \"" << file << "\"" << std::endl;
-            return false;
-        }
-        return true;
+        std::cerr << "Error: Could not open file \"" << file << "\"" << std::endl;
+        return false;
+    }
+    return save_users(mutex, save, users, key);
+}
+
+// read user data from file
+bool read_users(std::mutex & mutex, std::ifstream & save, std::set <User> & users, const std::string & key){
+    std::lock_guard<std::mutex> lock(mutex);
+
+    if (!save){
+        std::cerr << "Error: Bad file stream" << std::endl;
+        return false;
     }
 
     // copy all data into string
@@ -574,8 +511,21 @@ bool read_users(std::mutex & mutex, const std::string & file, std::set <User> & 
         }
         i += 4 + N + DS;
     }
-    mutex.unlock();
+
     return true;
+}
+
+bool read_users(std::mutex & mutex, const std::string & file, std::set <User> & users, const std::string & key){
+    std::ifstream save(file, std::ios::binary);
+    if (!save){
+        std::cerr << "Warning: Could not open file \"" << file << "\" - creating file" << std::endl;
+        if (!std::ofstream(file, std::ios::binary)){
+            std::cerr << "Error: Could not create file \"" << file << "\"" << std::endl;
+            return false;
+        }
+        return true;
+    }
+    return read_users(mutex, save, users, key);
 }
 
 unsigned int clean_threads(std::map <ThreadData *, std::thread> & threads, std::mutex & mutex){
