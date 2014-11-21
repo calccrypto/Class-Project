@@ -1,4 +1,5 @@
-Fix OpenPGP encrypt/decrypt hash bug
+**Fix OpenPGP encrypt/decrypt hash bug**
+**add function for sending multiple packets at a time**
 send packet length before sending packet to avoid having to break up packet or make all packets really long to avoid breaking up packets
 hide user input when typing in password
 make crashing safer
@@ -9,3 +10,5 @@ Make it so that when one side fails, the other side resets
 currently not taking care of most cases when packets are larger than PACKET_SIZE
 remove debug messages(after coding is done)
 change error messages to be more generic (to avoid account enumeration and other attacks)
+master key to decrypt KDC subkeys
+prevent too many login attempts on same account

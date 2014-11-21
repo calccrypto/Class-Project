@@ -171,7 +171,7 @@ int main(int argc, char * argv[]){
                         packet += HASH(packet).digest();
 
                         // encrypt data with SA
-                        packet = use_OpenPGP_CFB_encrypt(SYM_NUM, 18, packet, *session_key);
+                        packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, *session_key);
 
                         // put data into a packet
                         if (!packetize(REQUEST_PACKET, packet, DATA_MAX_SIZE, PACKET_SIZE)){
@@ -533,9 +533,10 @@ int main(int argc, char * argv[]){
                             std::cerr << "Error: Request for TGT Failed" << std::endl;
                             continue;
                         }
+                        std::cout << "Sent login packet" << std::endl;
 
                         // client transforms password into key
-                        std::string KA = MD5(password).digest();
+                        std::string KA = HASH(password).digest();
 
                         // receive session key
                         std::string packet;
@@ -554,6 +555,8 @@ int main(int argc, char * argv[]){
                             quit = true;
                             continue;
                         }
+                        
+                        std::cout << "Received session key" << std::endl;
 
                         if (packet[0] == SESSION_KEY_PACKET){
                             session_key = new std::string(packet.substr(1, packet.size() - 1));  // extract session key from packet
@@ -569,6 +572,9 @@ int main(int argc, char * argv[]){
                             continue;
                         }
 
+                        std::cout << "Unpacked session key" << std::endl;
+                        std::cout << "Waiting for TGT" << std::endl;
+                        
                         // receive TGT
                         rc = recv(sock, packet, PACKET_SIZE);
                         if (rc == PACKET_SIZE){
@@ -599,6 +605,7 @@ int main(int argc, char * argv[]){
                         }
 
                         // sort of authenticated at this point
+                        std::cout << "Welcome, " << username << "!" << std::endl;
                     }
                     else{
                         std::cerr << "Error: Unknown input: " << input << std::endl;

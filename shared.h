@@ -52,12 +52,6 @@ file for full license.
 
 const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1};     // 127.0.0.1
 const uint16_t DEFAULT_PORT = 45678;                          // Ephemeral port
-const uint32_t PACKET_SIZE = 1024;                            // 1024 octets
-const uint32_t PACKET_HEADER_SIZE = 1;                        // 1 octet
-const uint32_t PACKET_SIZE_INDICATOR = 4;                     // 4 octets
-const uint32_t DATA_MAX_SIZE = PACKET_SIZE                    // max size of payload in octets
-                                    - PACKET_HEADER_SIZE
-                                    - PACKET_SIZE_INDICATOR;
 const int32_t TIME_SKEW = 300;                                // seconds (5 minutes)
 
 typedef AES SYM;                                                                // default symmetric key algorithm for use without OpenPGP
@@ -68,6 +62,15 @@ const unsigned int BLOCK_SIZE = Symmetric_Algorithm_Block_Length.at(SYM_NAME);  
 typedef SHA256 HASH;                                                            // default hashing algorithm for use without OpenPGP
 const unsigned int DIGEST_SIZE = HASH().digestsize();                           // hashing algorithm output size (bits)
 const uint8_t COMPRESSION_ALGORITHM = 1;                                        // default compression algorithm: ZLIB
+const uint32_t RESYNC = 18;                                                     // OpenPGP packet tag 18 triggers resync
+
+
+const uint32_t PACKET_SIZE = BLOCK_SIZE >> 2;                 // 2 blocks per packet
+const uint32_t PACKET_HEADER_SIZE = 1;                        // 1 octet
+const uint32_t PACKET_SIZE_INDICATOR = 4;                     // 4 octets
+const uint32_t DATA_MAX_SIZE = PACKET_SIZE                    // max size of payload in octets
+                                    - PACKET_HEADER_SIZE
+                                    - PACKET_SIZE_INDICATOR;
 
 // Packet Type                                            // payload
 const uint8_t FAIL_PACKET             = 0;                // message

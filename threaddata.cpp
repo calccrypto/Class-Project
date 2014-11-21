@@ -1,6 +1,6 @@
 #include "threaddata.h"
 
-ThreadData::ThreadData() : sock(-1), name(""), quit(false) {}
+ThreadData::ThreadData() : sock(-1), name(""), users(NULL), threads(NULL), quit(false) {}
 
 void ThreadData::set_sock(int s){
     sock = s;
