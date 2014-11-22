@@ -56,16 +56,18 @@ const std::string users_file = "user";
 // need to prevent user from logging in multiple times at once
 // need to check for disconnect as well as bad packet
 void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
-    // User's identity
+    // client's identity
     User * client = NULL;
+    // client's session key
+    std::string * SA = NULL;
 
     int rc = PACKET_SIZE;
 
     // accept commands
     std::string packet;
     while (!quit && !(args -> get_quit()) && rc){
-        if ((rc = recv_packets(args -> get_sock(), {QUIT_PACKET, CREATE_ACCOUNT_PACKET_1, LOGIN_PACKET,}, packet)) < 1){
-            std::cerr << "Error: Could not receive data" << std::endl;
+        if ((rc = recv_packets(args -> get_sock(), {QUIT_PACKET, CREATE_ACCOUNT_PACKET, LOGIN_PACKET, TICKET_PACKET}, packet)) < 1){
+            std::cerr << "Error: Received bad data" << std::endl;
             continue;
         }
         // get packet type
@@ -77,8 +79,8 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
         if (type == QUIT_PACKET){
             std::cout << "Received command to quit" << std::endl;
             // clean up data
-            delete client;
-            client = NULL;
+            delete client; client = NULL;
+            delete SA; SA = NULL;
             args -> set_quit(true);
             continue;
         }
@@ -86,84 +88,65 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
         // parse input
         if (client){                            // if identity is established
             if (type == REQUEST_PACKET){        // client wants to talk to someone
-                packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet, client -> get_key());
+                // parse request packet
+                uint32_t target_len = toint(packet.substr(0, 4), 256);
+                std::string target_name = packet.substr(4, target_len);
 
-                std::string md = packet.substr(packet.size() - (DIGEST_SIZE >> 3), DIGEST_SIZE >> 3);
-                packet = packet.substr(0, packet.size() - (DIGEST_SIZE >> 3));
-                if (HASH(packet).digest() != md){
-                    std::cerr << "Error: Hash of data does not match given checksum" << std::endl;
-                    continue;
-                }
-
-                uint32_t t_len = toint(packet.substr(0, 4), 256);         // length of target name
-                std::string target = packet.substr(4, t_len);             // target name
-                uint32_t ts = toint(packet.substr(4 + t_len, 4), 256);    // timestamp
-                uint32_t tgt_len = toint(packet.substr(8 + t_len, 4));    // TGT length
-                TGT tgt(packet.substr(12 + t_len, tgt_len));              // parse TGT
-
-                // check timstamp
-                // need to check values; computations might not be correct
-                if (abs(now() - ts) > TIME_SKEW){
-                    // send "bad timestamp" to client
-                    packet = "Error: Timestamp has expired";
-                    if ((rc = send_packets(args -> get_sock(), packet)) < 1){
-                        std::cerr << "Error: Could not send failure packet" << std::endl;
-                    }
-                    continue;
-                }
-
-                // check if both people are online
-                std::map <ThreadData *, std::thread>::iterator target_thread = args -> get_threads() -> begin();
-                while (target_thread != args -> get_threads() -> end()){
-                    if ((target_thread -> first -> get_name() == target) && !(target_thread -> first -> get_quit())){
+                // check that target exists
+                User * target = NULL;
+                for(User const & u : users){
+                    if (u == target_name){
+                        target = new User(u);
                         break;
                     }
-                    target_thread++;
                 }
 
-                if (target_thread == args -> get_threads() -> end()){
-                    // send client error message saying target not online
-                    std::cerr << "Error: Target not found" << std::endl;
-
-                    packet = "Error: Target not online";
-                    if ((rc = send_packets(args -> get_sock(), packet)) < 1){
-                        std::cerr << "Error: Could not send failure packet" << std::endl;
+                if (!target){
+                    packet = "Error: Target not found";
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, packet)) < 1){
+                        std::cerr << "Error: Could not send error message" << std::endl;
                     }
                     continue;
                 }
 
-                // send success packet
-                packet = "";
-                if ((rc = send_packets(args -> get_sock(), packet)) < 1){
-                    std::cerr << "Error: Could not send success packet" << std::endl;
-                    continue;
-                }
+                uint32_t tgt_len = toint(packet.substr(4 + target_len, 4), 256);
+                TGT tgt(packet.substr(8 + taget_len, tgt_len));
+                uint32_t auth_len = toint(packet.substr(8 + target_len + tgt_len, 4), 256);
+                std::string authenticator = packet.substr(12 + target_len + tgt_len, auth_leng);
 
-                // generate session key for clients
-                std::string S_AB = random_octets(KEY_SIZE);
+                // check authenticator timestamp
+                authenticator = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, authenticator, *SA);
+                authenticator = authenticator.substr((DIGEST_SIZE >> 3) + 2, authenticator.size() - (DIGEST_SIZE >> 3) - 2);
 
-                // find target's shared key
-                std::string K_B;
-                for(User const & u : *(args -> get_users())){
-                    if (u == target_thread ->  first -> get_name()){
-                        K_B = u.get_key();
+                if (authenticator.size() != 4){
+                    packet = "Error: Bad timestamp size";
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, packet)) < 1){
+                        std::cerr << "Error: Could not send error message" << std::endl;
                     }
-                }
-
-                // create ticket for target
-                std::string ticket = unhexlify(makehex((client -> get_name()).size(), 8)) + client -> get_name() + S_AB;
-                ticket = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, ticket, K_B);
-
-                // create ticket for client
-                ticket = unhexlify(makehex(target.size(), 8)) + target + S_AB;
-                ticket = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, ticket, client -> get_key());
-
-                // send ticket to client
-                packet = ticket;
-                if ((rc = send_packets(args -> get_sock(), packet)) < 1){
-                    std::cerr << "Error: Could not send success packet" << std::endl;
                     continue;
                 }
+
+                uint32_t timestamp = toint(authenticator, 256);
+                if ((now() - timestamp) > TIME_SKEW){
+                    packet = "Error: Bad timestamp";
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, packet)) < 1){
+                        std::cerr << "Error: Could not send error message" << std::endl;
+                    }
+                    continue;
+                }
+
+                std::string KAB = random_octetst(KEY_SIZE >> 3); // key shared between 2 users
+                std::string ticket = client -> get_name();
+                ticket = unhexlify(makehex(ticket.size(), 8)) + ticket + KAB;
+                ticket = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, ticket, target -> get_key(), random_octetst(BLOCK_SIZE >> 3))
+                packet = packet.substr(0, 4 + target_len) + KAB + unhexlify(makehex(ticket.size(), 8)) + ticket;
+                packet += HASH(packet).digest();
+                packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, *SA, random_octets(BLOCK_SIZE >> 3));
+
+                if ((rc = send_packets(args -> get_sock(), REPLY_PACKET, packet)) < 1){
+                    std::cerr << "Error: Could not send reply" << std::endl;
+                }
+                continue;
             }
         }
         else{                               // if not logged in, only allow for creating account and logging in
@@ -173,39 +156,45 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 std::string username = packet;
 
                 // search database for user
-                for(std::set <User>::iterator it = args -> get_users() -> begin(); it != args -> get_users() -> end(); it++){
-                    if (*it == username){
-                        client = new User(*it);
+                for(User const & u : *(args -> get_users())){
+                    if (u == username){
+                        client = new User(u);
                         break;
                     }
                 }
-                if (!client){// person not found in database
+
+                std::cout << client << std::endl;
+
+                if (client){   // user found in database
+                    // send session key + TGT (encrypted with shared key)
+
+                    std::cout << "Sending session key" << std::endl;
+                    SA = new std::string(random_octets(KEY_SIZE >> 3)); // session key
+
+                    // encrypt TGT with KDC key
+                    packet = TGT(username, *SA, now(), TIME_SKEW).str();
+                    packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, secret_key, random_octets(BLOCK_SIZE >> 3));
+
+                    // encrypt SA + TGT with KA
+                    packet = *SA + unhexlify(makehex(packet.size(), 8)) + packet;
+                    packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, client -> get_key(), random_octets(BLOCK_SIZE >> 3));     // encrypt session key with user's shared key
+
+                    if ((rc = send_packets(args -> get_sock(), CREDENTIALS_PACKET, packet)) < 1){
+                        std::cerr << "Error: Could not send SA" << std::endl;
+                        continue;
+                    }
+                }
+                else{           // user not found
                     packet = "Error: Could not find username";
-                    if ((rc = send_packets(args -> get_sock(), FAILURE_PACKET, packet)) < 1){
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, packet)) < 1){
                         std::cerr << "Error: Could not send error message" << std::endl;
                     }
                     continue;
                 }
-                
-                // send session key
-                std::cout << "Sending session key" << std::endl;
-                packet = random_octets(KEY_SIZE >> 3); // session key
-                packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, client -> get_key(), random_octets(BLOCK_SIZE >> 3));     // encrypt session key with user's shared key
-                if ((rc = send_packets(args -> get_sock(), SESSION_KEY_PACKET, packet)) < 1){
-                    std::cerr << "Error: Could not send session_key" << std::endl;
-                    continue;
-                }
+                std::cout << "Done logging in" << std::endl;
 
-                // send TGT (encrypted with session key)
-                std::cout << "sending TGT" << std::endl;
-                packet = TGT(username, session_key, now(), TIME_SKEW).str();
-                packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, session_key, random_octets(BLOCK_SIZE >> 3));
-                if ((rc = send_packets(args -> get_sock(), TGT_PACKET packet)) < 1){
-                    std::cerr << "Error: Could not send TGT" << std::endl;
-                    continue;
-                }
             }
-            else if (type == CREATE_ACCOUNT_PACKET_1){                    // create new account
+            else if (type == CREATE_ACCOUNT_PACKET){                    // create new account
                 std::string new_username = packet;
                 std::cout << "Received request for new account for " << new_username << std::endl;
 
@@ -221,189 +210,69 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 // don't allow duplicate names until unique IDs are properly implemented
                 if (exists){
                     packet = "Error: User already exists";
-                    if ((rc = send_packets(args -> get_sock(), packet)) < 1){
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, packet)) < 1){
                         std::cerr << "Error: Request for TGT Failed" << std::endl;
                     }
                     continue;
                 }
-                std::cout << "No duplicates found" << std::endl;
 
+                std::cout << "Sending PGP key" << std::endl;
                 // Open PGP public key
                 std::ifstream pub_file(public_key_file);
-                if (!pub_file){
+                if (pub_file){                      // if the file opened
+                    PGPPublicKey pub(pub_file);     // Parse key file to remove garbage
+                    if ((rc = send_packets(args -> get_sock(), PUBLIC_KEY_PACKET, pub.write())) < 1){
+                        std::cerr << "Error: Could not send public key" << std::endl;
+                        continue;
+                    }
+                }
+                else{                               // if not opened
                     std::cerr << "Could not open public key file \"" << public_key_file << "\"" << std::endl;
                     packet = "Error: Could not open public key";
-                    if ((rc = send_packets(args -> get_sock(), packet)) < 1){
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, packet)) < 1){
                         std::cerr << "Error: Could not send error message" << std::endl;
                     }
                     continue;
                 }
 
-                std::cout << "Opening PGP key" << std::endl;
-
-                // Parse key file to remove garbage
-                PGPPublicKey pub(pub_file);
-                if ((rc = send_packet(args -> get_sock(), PUBLIC_KEY_PACKET, pub.write())) < 1){
-                    std::cerr << "Error: Could not send public key" << std::endl;
-                }
-
-                // if (pub_str.size() > DATA_MAX_SIZE){
-                    // // send partial packet begin
-                    // packet = pub_str.substr(0, DATA_MAX_SIZE);
-                    // if (!packetize(START_PARTIAL_PACKET, packet)){
-                        // std::cerr << "Error: Could notaaa pack data" << std::endl;
-                        // continue;
-                    // }
-                    // if ((rc = send_packets(args -> get_sock(), packet)) < 1){
-                        // std::cerr << "Error: Failed to send starting partial packet" << std::endl;
-                        // continue;
-                    // }
-                    // // send partial packets
-                    // unsigned int i = DATA_MAX_SIZE;
-                    // const unsigned int last_block = pub_str.size() - DATA_MAX_SIZE;
-                    // while (i < last_block){
-                        // packet = pub_str.substr(i, DATA_MAX_SIZE);
-                        // if (!packetize(PARTIAL_PACKET, packet)){
-                            // std::cerr << "Error: Could not pack data" << std::endl;
-                            // continue;
-                        // }
-                        // if ((rc = send_packets(args -> get_sock(), packet)) < 1){
-                            // std::cerr << "Error: Failed to send partial packet" << std::endl;
-                            // continue;
-                        // }
-                        // i += DATA_MAX_SIZE;
-                    // }
-
-                    // // send partial packet end
-                    // packet = pub_str.substr(i, DATA_MAX_SIZE);
-                    // if (!packetize(END_PARTIAL_PACKET, packet)){
-                        // std::cerr << "Error: Could not pack data" << std::endl;
-                        // continue;
-                    // }
-                    // if ((rc = send_packets(args -> get_sock(), packet)) < 1){
-                        // std::cerr << "Error: Failed to send ending partial packet" << std::endl;
-                        // continue;
-                    // }
-                // }
-                // else{
-                    // packet = pub_str;
-                    // if (!packetize(CREATE_ACCOUNT_PACKET_2, packet)){
-                        // std::cerr << "Error: Could not pack data" << std::endl;
-                        // continue;
-                    // }
-                    // if ((rc = send_packets(args -> get_sock(), packet)) < 1){
-                        // std::cerr << "Error: Could not send public key" << std::endl;
-                        // continue;
-                    // }
-                // }
-
-                std::cout << "PGP key sent" << std::endl;
-
-                // get client verification of public key
-                if ((rc = recv_packets(args -> get_sock(), packet)) < 1){
-                    std::cerr << "Error: Could not receive client verification of public key" << std::endl;
+                // receive fail packet or encrypted shared key
+                if ((rc = recv_packets(args -> get_sock(), {FAIL_PACKET, SYM_ENCRYPTED_PACKET}, packet)) < 1){
+                    std::cerr <<"Error: Could not receive next packet" << std::endl;
                     continue;
                 }
-                type = packet[0];
-                packet = packet.substr(1, packet.size() - 1);
-
-                // client received bad key
-                if (type == FAIL_PACKET){
-                    std::cerr << packet << std::endl;
-                    continue;
-                }
-                // client received good key
-                else if (type == SUCCESS_PACKET){
-                    std::cout << "Public key received by client" << std::endl;
-                }
-                else{
-                    std::cerr << "Error: Unexpected packet type received." << std::endl;
-                    continue;
-                }
-
-                std::cout << "Received response from client" << std::endl;
-
-                // generate user id
-                // check if it has already been taken
-
-                // get client password
-                if ((rc = recv_packets(args -> get_sock(), packet)) < 1){
-                    std::cerr <<"Error: Could not get client password" << std::endl;
-
-                }
-                type = packet[0];
-                std::string kh = packet.substr(1, packet.size() - 1);
-
-                if (type == CREATE_ACCOUNT_PACKET_3){
-                    if ((rc = recv_packets(args -> get_sock(), packet)) < 1){
-                        std::cerr << "Error: Could not receive packet" << std::endl;
-                        continue;
-                    }
-                }
-                else if (type == START_PARTIAL_PACKET){
-                    // receive partial packets
-                    while (type != END_PARTIAL_PACKET){
-                        if ((rc = recv_packets(args -> get_sock(), packet)) < 1){
-                            std::cout << "Error: Could not receive partial packet" << std::endl;
+                if (packet[0] == SYM_ENCRYPTED_PACKET){
+                    packet = packet.substr(1, packet.size());
+                    std::ifstream pri_file(private_key_file, std::ios::binary);
+                    if (!pri_file){
+                        std::cerr << "Error: Unable to open \"" << private_key_file << "\"" << std::endl;
+                        packet = "Error: Unable to open secret key";
+                        if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, packet)) < 1){
+                            std::cerr << "Error: Could not open private key" << std::endl;
                             continue;
                         }
-
-                        type = packet[0];
-                        packet = packet.substr(1, packet.size() - 1);
-
-                        if ((type == PARTIAL_PACKET) || (type == END_PARTIAL_PACKET)){
-                            kh += packet;
-                        }
-                        else if (type == FAIL_PACKET){
-                            std::cerr << packet << std::endl;
-                            break;
-                        }
-                        else{
-                            std::cerr << "Error: Unexpected packet type received." << std::endl;
-                            break;
-                        }
                     }
+                    PGPSecretKey pri(pri_file);
+                    PGPMessage m(packet);
+                    std::string shared_key = decrypt_pka(pri, m, pki_key, false);
 
-                    if (type != END_PARTIAL_PACKET){
-                        std::cerr << "Error: Failed to receive ending partial packet" << std::endl;
-                        continue;
-                    }
+                    // create new user
+                    User new_user;
+                    new_user.set_name(new_username);
+                    new_user.set_timeskew(TIME_SKEW);
+                    new_user.set_key(shared_key);
+
+                    // add new user to database (in memory)
+                    mutex.lock();
+                    args -> get_users() -> insert(new_user);
+                    std::cout << "Added new user: " << new_username << std::endl;
+                    mutex.unlock();
+
                 }
-                else if (type == FAIL_PACKET){
-                    std::cerr << packet << std::endl;
+                else if (packet[0] == FAIL_PACKET){
+                    std::cerr << packet.substr(1, packet.size() - 1) << std::endl;
                     continue;
                 }
-                else{
-                    std::cerr << "Error: Unexpected packet type received." << std::endl;
-                }
-
-                // open private key file
-                std::ifstream pri_file(private_key_file, std::ios::binary);
-                PGPSecretKey pri(pri_file);
-
-                // decrypt kh
-                kh = decrypt_pka(pri, kh, secret_key, false);
-
-                // generate random KA
-                std::string KA = random_octets(KEY_SIZE >> 3);
-
-                // encrypt KA with Kh
-                KA = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, KA, kh);
-
-                // create new user
-                User new_user;
-                new_user.set_name(new_username);
-                new_user.set_timeskew(TIME_SKEW);
-                new_user.set_key(KA);
-
-                // add new user to database (in memory)
-                mutex.lock();
-                args -> get_users() -> insert(new_user);
-                std::cout << "Added new user: " << new_username << std::endl;
-                mutex.unlock();
-
                 std::cout << "Done setting up account for " << new_username << std::endl;
-
             }
         }
     }
@@ -595,8 +464,7 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
                     }
                     else                                    // otherwise, print
                     {
-                        // std::cout << t.first -> get_thread_id() << " " << t.second.get_id() << std::endl;
-                        std::cout << t.first -> get_name() << " " << t.first -> get_thread_id() << std::endl;
+                        std::cout << (t.first -> get_name().size()?t.first -> get_name():std::string("Unknown")) << " " << t.first -> get_thread_id() << " " << t.second.get_id() << std::endl;
                     }
                 }
             }
