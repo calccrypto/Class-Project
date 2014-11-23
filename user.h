@@ -38,7 +38,6 @@ class User {
         uint64_t timeskew;      // amount of time allowed between creation of a packet and receiving it
         std::string name;       // username
         std::string key;        // key shared between user and KDC
-        bool loggedin;
 
         /*
             Formatted string:
@@ -53,7 +52,7 @@ class User {
     public:
         User();
         User(const User & u);
-        User(const std::string & formatted); 
+        User(const std::string & formatted);
         User(/*const uint32_t & UID,*/ const uint64_t & TIMESKEW, const std::string & NAME, const std::string KEY);
 
         // Modifiers
@@ -61,15 +60,13 @@ class User {
         void set_timeskew(const uint64_t & TIMESKEW);
         void set_name(const std::string & NAME);
         void set_key(const std::string & KEY);
-        void set_loggedin(const bool & l);
 
         // Accessors
         // uint32_t get_uid() const;
         uint64_t get_timeskew() const;
         std::string get_name() const;
         std::string get_key() const;
-        bool get_loggedin() const;
-        
+
         // Operators
         User operator=(const User & u);
         bool operator==(const std::string & u) const;
@@ -78,8 +75,6 @@ class User {
         bool operator<(const User & u) const;
 
         // Miscellaneous
-        bool login();                   // tries to log in and returns whether or not already logged in from before
-        bool logout();                  // tries to log out and returns whether or not already logged out from before
         std::string str() const;        // returns formatted string
 };
 

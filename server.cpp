@@ -57,31 +57,43 @@ const std::string users_file = "user";
 // need to prevent user from logging in multiple times at once
 // need to check for disconnect as well as bad packet
 void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
+    std::cout << "Thread " << args -> get_thread_id() << " started." << std::endl;
+
     // client's identity
     User * client = NULL;
     // client's session key
     std::string * SA = NULL;
 
     int rc = SUCCESS_PACKET;
+    std::string packet;
+
+    // get initial packet with ip address
+    if ((rc = recv_packets(args -> get_sock(), {IP_PACKET}, packet)) < 1){
+        packet = "Error: Received bad data";
+        std::cerr << packet << std::endl;
+        if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, packet)) < 1){
+            std::cerr << "Error: Could not send error message" << std::endl;
+        }
+        args -> set_quit(true);
+    }
+    else{
+        args -> set_ip_address({(uint8_t) packet[1], (uint8_t) packet[2], (uint8_t) packet[3], (uint8_t) packet[4]});
+        std::cout << "Connected to " << (int) (uint8_t) packet[1] << "." << (int) (uint8_t) packet[2] << "." << (int) (uint8_t) packet[3] << "." << (int) (uint8_t) packet[4] << std::endl;
+    }
 
     // accept commands
-    std::string packet;
     while (!quit && !(args -> get_quit()) && rc){
         if ((rc = recv_packets(args -> get_sock(), {QUIT_PACKET, CREATE_ACCOUNT_PACKET, LOGIN_PACKET, REQUEST_PACKET}, packet)) < 1){
             packet = "Error: Received bad data";
             std::cerr << packet << std::endl;
-            if ((rc = send_packets(args -> get_sock() , FAIL_PACKET, packet)) < 1){
+            if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, packet)) < 1){
                 std::cerr << "Error: Could not send error message" << std::endl;
             }
             continue;
         }
-        // get packet type
-        uint8_t type = packet[0];
-        // get rest of data
-        packet = packet.substr(1, packet.size() - 1);
 
         // quit works no matter what
-        if (type == QUIT_PACKET){
+        if (packet[0] == QUIT_PACKET){
             std::cout << "Received command to quit" << std::endl;
             // clean up data
             delete client; client = NULL;
@@ -92,10 +104,10 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
         // parse input
         if (client){                            // if identity is established
-            if (type == REQUEST_PACKET){        // client wants to talk to someone
+            if (packet[0] == REQUEST_PACKET){        // client wants to talk to someone
                 // parse request packet
-                uint32_t target_len = toint(packet.substr(0, 4), 256);
-                std::string target_name = packet.substr(4, target_len);
+                uint32_t target_len = toint(packet.substr(1, 4), 256);
+                std::string target_name = packet.substr(5, target_len);
 
                 // check that target exists
                 User * target = NULL;
@@ -114,10 +126,10 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                     continue;
                 }
 
-                uint32_t tgt_len = toint(packet.substr(4 + target_len, 4), 256);
-                TGT tgt(packet.substr(8 + target_len, tgt_len));
-                uint32_t auth_len = toint(packet.substr(8 + target_len + tgt_len, 4), 256);
-                std::string authenticator = packet.substr(12 + target_len + tgt_len, auth_len);
+                uint32_t tgt_len = toint(packet.substr(5 + target_len, 4), 256);
+                TGT tgt(packet.substr(9 + target_len, tgt_len));
+                uint32_t auth_len = toint(packet.substr(9 + target_len + tgt_len, 4), 256);
+                std::string authenticator = packet.substr(13 + target_len + tgt_len, auth_len);
 
                 // check authenticator timestamp
                 authenticator = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, authenticator, *SA);
@@ -148,7 +160,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 std::string ticket = client -> get_name();
                 ticket = unhexlify(makehex(ticket.size(), 8)) + ticket + KAB;
                 ticket = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, ticket, target -> get_key(), random_octets(BLOCK_SIZE >> 3));
-                packet = packet.substr(0, 4 + target_len) + KAB + unhexlify(makehex(ticket.size(), 8)) + ticket;
+                packet = packet.substr(1, 4 + target_len) + KAB + unhexlify(makehex(ticket.size(), 8)) + ticket;
                 packet += HASH(packet).digest();
                 packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, *SA, random_octets(BLOCK_SIZE >> 3));
 
@@ -160,7 +172,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             }
         }
         else{                               // if not logged in, only allow for creating account and logging in
-            if (type == LOGIN_PACKET){
+            if (packet[0] == LOGIN_PACKET){
                 std::cout << "login packet received" << std::endl;
                 // get username
                 std::string username = packet;
@@ -202,8 +214,9 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 std::cout << "Done logging in" << std::endl;
 
             }
-            else if (type == CREATE_ACCOUNT_PACKET){                    // create new account
-                std::string new_username = packet;
+            else if (packet[0] == CREATE_ACCOUNT_PACKET){                    // create new account
+                uint32_t len = toint(packet.substr(1, 4), 256);
+                std::string new_username = packet.substr(5, len);
                 std::cout << "Received request for new account for " << new_username << std::endl;
 
                 // search for user in database
@@ -632,14 +645,12 @@ int main(int argc, char * argv[]){
         try{
             ThreadData * t_data = new ThreadData;
             t_data -> set_sock(csock);
-            t_data -> set_thread_id(thread_count);
+            t_data -> set_thread_id(thread_count++);
             t_data -> set_users(&users);
             t_data -> set_threads(&threads);
             t_data -> set_quit(false);
 
             threads[t_data] = std::thread(client_thread, t_data, std::ref(mutex), std::ref(quit));
-            std::cout << "Thread " << thread_count << " started." << std::endl;
-            thread_count++;
         }
         catch (std::system_error & sys_err){
             std::cerr << "Could not create thread due to: " << sys_err.what() << std::endl;

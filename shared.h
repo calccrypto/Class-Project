@@ -69,8 +69,8 @@ const uint32_t PACKET_SIZE = BLOCK_SIZE >> 2;             // 2 blocks per packet
 const uint32_t PACKET_HEADER_SIZE = 1;                    // 1 octet
 const uint32_t PACKET_SIZE_INDICATOR = 4;                 // 4 octets
 const uint32_t DATA_MAX_SIZE = PACKET_SIZE                // max size of payload in octets
-                                    - PACKET_HEADER_SIZE
-                                    - PACKET_SIZE_INDICATOR;
+                                - PACKET_HEADER_SIZE
+                                - PACKET_SIZE_INDICATOR;
 
 // Packet Type                                            // payload
 // generic packets
@@ -86,19 +86,26 @@ const int8_t REQUEST_PACKET          = 7;                 // target name + TGT +
 
 // packets created after starting packets
 const int8_t REPLY_PACKET            = 8;                 // response to request packet
-const int8_t INITIAL_SEND_PACKET     = 9;                 // 4 octet packet count + 1 octet expected type
-const int8_t SYM_ENCRYPTED_PACKET    = 10;                // symmetrically encrypted data
-const int8_t PUBLIC_KEY_PACKET       = 11;                // a PGP Public Key Block
+const int8_t SYM_ENCRYPTED_PACKET    = 9;                 // symmetrically encrypted data
+const int8_t PUBLIC_KEY_PACKET       = 10;                // a PGP Public Key Block
 
 // session packets
-const int8_t START_TALK_PACKET       = 12;                // request from a client to another to start session
-const int8_t TALK_PACKET             = 13;                // normal conversation packet
-const int8_t END_TALK_PACKET         = 14;                // terminate session packet
+const int8_t START_TALK_PACKET       = 11;                // ticket + authenticator
+const int8_t TALK_PACKET             = 12;                // encrypted data
+const int8_t END_TALK_PACKET         = 13;                // no payload
+
+// special packets
+const int8_t IP_PACKET               = 14;                // initial packet sent to server side
+const int8_t INITIAL_SEND_PACKET     = 15;                // 4 octet packet count + 1 octet expected type
 
 // const int8_t _PACKET = ;
 
 // generate random octets
 std::string random_octets(const unsigned int count = 0);
+
+// parse IPv4 strings for the form A.B.C.D
+std::array <uint8_t, 4> parse_ip(const std::string & str);
+std::array <uint8_t, 4> parse_ip(char * buf);
 
 // send single packet and check if it was sent properly
 int send(int sock, const std::string & data);
@@ -113,6 +120,7 @@ bool packetize(const uint8_t & type, std::string & packet);
 // Takes packetized data and writes packet type + data into variable packet
 bool unpacketize(std::string & packet);
 
+// simple send/recv error messages; if output != input, error
 int network_message(const int & rc);
 
 // pack and send multiple packets worth of data

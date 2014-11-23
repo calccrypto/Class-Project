@@ -1,6 +1,14 @@
 #include "threaddata.h"
 
-ThreadData::ThreadData() : sock(-1), name(""), users(NULL), threads(NULL), quit(false) {}
+ThreadData::ThreadData() : ip_address({127, 0, 0, 1}), sock(-1), name(""), users(NULL), threads(NULL), quit(false) {}
+
+void ThreadData::set_ip_address(const std::array <uint8_t, 4> & ip){
+    ip_address = ip;
+}
+
+void ThreadData::set_ip_address(const uint8_t & ip0, const uint8_t & ip1, const uint8_t & ip2, const uint8_t & ip3){
+    ip_address = {ip0, ip1, ip2, ip3};
+}
 
 void ThreadData::set_sock(int s){
     sock = s;
@@ -24,6 +32,10 @@ void ThreadData::set_threads(std::map <ThreadData *, std::thread> * t){
 
 void ThreadData::set_quit(const bool & q){
     quit = q;
+}
+
+std::array <uint8_t, 4> ThreadData::get_ip_address() const {
+    return ip_address;
 }
 
 int ThreadData::get_sock() const {

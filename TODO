@@ -13,3 +13,5 @@ missing error message if server crashes before client stops
 add try/catch for things in OpenPGP that can throw
 listening socket in client for talking to another client
 send_packets/recv_packets moving bad data for some reason. Leftover data in sock is messing with communications
+do not decrypt user data that is in memory until it is necessary 
+    - encrypt (user name + shared key encrypted with kh + hash) with kdc master key
