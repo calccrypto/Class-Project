@@ -41,6 +41,7 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include "../OpenPGP/OpenPGP.h"
 
 #include "shared.h"
+#include "TGT.h"
 #include "threaddata.h"
 #include "user.h"
 
@@ -61,13 +62,17 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
     // client's session key
     std::string * SA = NULL;
 
-    int rc = PACKET_SIZE;
+    int rc = SUCCESS_PACKET;
 
     // accept commands
     std::string packet;
     while (!quit && !(args -> get_quit()) && rc){
-        if ((rc = recv_packets(args -> get_sock(), {QUIT_PACKET, CREATE_ACCOUNT_PACKET, LOGIN_PACKET, TICKET_PACKET}, packet)) < 1){
-            std::cerr << "Error: Received bad data" << std::endl;
+        if ((rc = recv_packets(args -> get_sock(), {QUIT_PACKET, CREATE_ACCOUNT_PACKET, LOGIN_PACKET, REQUEST_PACKET}, packet)) < 1){
+            packet = "Error: Received bad data";
+            std::cerr << packet << std::endl;
+            if ((rc = send_packets(args -> get_sock() , FAIL_PACKET, packet)) < 1){
+                std::cerr << "Error: Could not send error message" << std::endl;
+            }
             continue;
         }
         // get packet type
@@ -94,7 +99,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
                 // check that target exists
                 User * target = NULL;
-                for(User const & u : users){
+                for(User const & u : *(args -> get_users())){
                     if (u == target_name){
                         target = new User(u);
                         break;
@@ -110,9 +115,9 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 }
 
                 uint32_t tgt_len = toint(packet.substr(4 + target_len, 4), 256);
-                TGT tgt(packet.substr(8 + taget_len, tgt_len));
+                TGT tgt(packet.substr(8 + target_len, tgt_len));
                 uint32_t auth_len = toint(packet.substr(8 + target_len + tgt_len, 4), 256);
-                std::string authenticator = packet.substr(12 + target_len + tgt_len, auth_leng);
+                std::string authenticator = packet.substr(12 + target_len + tgt_len, auth_len);
 
                 // check authenticator timestamp
                 authenticator = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, authenticator, *SA);
@@ -135,14 +140,19 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                     continue;
                 }
 
-                std::string KAB = random_octetst(KEY_SIZE >> 3); // key shared between 2 users
+                // check TGT
+
+
+                // create reply packet
+                std::string KAB = random_octets(KEY_SIZE >> 3); // key shared between 2 users
                 std::string ticket = client -> get_name();
                 ticket = unhexlify(makehex(ticket.size(), 8)) + ticket + KAB;
-                ticket = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, ticket, target -> get_key(), random_octetst(BLOCK_SIZE >> 3))
+                ticket = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, ticket, target -> get_key(), random_octets(BLOCK_SIZE >> 3));
                 packet = packet.substr(0, 4 + target_len) + KAB + unhexlify(makehex(ticket.size(), 8)) + ticket;
                 packet += HASH(packet).digest();
                 packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, *SA, random_octets(BLOCK_SIZE >> 3));
 
+                // send reply placket
                 if ((rc = send_packets(args -> get_sock(), REPLY_PACKET, packet)) < 1){
                     std::cerr << "Error: Could not send reply" << std::endl;
                 }
@@ -162,8 +172,6 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                         break;
                     }
                 }
-
-                std::cout << client << std::endl;
 
                 if (client){   // user found in database
                     // send session key + TGT (encrypted with shared key)
@@ -276,6 +284,10 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             }
         }
     }
+
+    // close the socket
+    close(args -> get_sock());
+
     std::cout << "Thread " << args -> get_thread_id() << " terminated" << std::endl;
     return NULL;
 }
@@ -527,6 +539,13 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
     // force all clients to end
     while(threads.size()){
         ThreadData * ptr = threads.begin() -> first;
+        ptr -> set_quit(true);
+
+        if (send_packets(ptr -> get_sock(), QUIT_PACKET, "") < 1){
+            std::cerr << "Error: Could not send quit message to client " << ptr -> get_thread_id() << std::endl;
+        }
+
+        threads.begin() -> second.join();
         threads.erase(ptr);
         delete ptr;
         ptr = NULL;
@@ -540,7 +559,7 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
 int main(int argc, char * argv[]){
     BBS(static_cast <PGPMPI> (static_cast <unsigned int> (now())));
 
-    uint16_t port = DEFAULT_PORT;               // port to listen on
+    uint16_t port = DEFAULT_SERVER_PORT;        // port to listen on
 
     if (argc == 1);                             // no input port
     else if (argc == 2){                        // port given
@@ -605,7 +624,7 @@ int main(int argc, char * argv[]){
         sockaddr_in unused;
         socklen_t size = sizeof(unused);
         int csock = accept(lsock, reinterpret_cast<sockaddr*>(&unused), &size);
-        if(csock < 0)    //bad client, skip it
+        if(csock < 1)    //bad client, skip it
             continue;
 
         mutex.lock();
@@ -628,15 +647,6 @@ int main(int argc, char * argv[]){
         // // keep on trying to create thread
 
         mutex.unlock();
-    }
-
-    // wait for all threads to stop (if the server thread did not already stop them)
-    for(std::pair <ThreadData * const, std::thread> & t : threads){
-        t.first -> set_quit(true);
-        t.second.join();
-        ThreadData * temp = t.first;
-        threads.erase(t.first);
-        delete temp;
     }
 
     std::cout << "Server has stopped" << std::endl;

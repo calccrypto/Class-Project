@@ -40,6 +40,7 @@ file for full license.
 
 #include <array>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -49,10 +50,9 @@ file for full license.
 
 #include "../OpenPGP/OpenPGP.h" // Encryptions and Hashes
 
-#include "TGT.h"
-
 const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1}; // 127.0.0.1
-const uint16_t DEFAULT_PORT = 45678;                      // Ephemeral port
+const uint16_t DEFAULT_SERVER_PORT = 45678;               // Ephemeral port for KDC
+const uint16_t DEFAULT_TALK_PORT = 56789;                 // Ephemeral port for talking to another client
 const int32_t TIME_SKEW = 300;                            // seconds (5 minutes)
 
 typedef AES SYM;                                                                // default symmetric key algorithm for use without OpenPGP
@@ -65,7 +65,6 @@ const unsigned int DIGEST_SIZE = HASH().digestsize();                           
 const uint8_t COMPRESSION_ALGORITHM = 1;                                        // default compression algorithm: ZLIB
 const uint32_t RESYNC = 18;                                                     // OpenPGP packet tag 18 triggers resync
 
-
 const uint32_t PACKET_SIZE = BLOCK_SIZE >> 2;             // 2 blocks per packet
 const uint32_t PACKET_HEADER_SIZE = 1;                    // 1 octet
 const uint32_t PACKET_SIZE_INDICATOR = 4;                 // 4 octets
@@ -75,25 +74,28 @@ const uint32_t DATA_MAX_SIZE = PACKET_SIZE                // max size of payload
 
 // Packet Type                                            // payload
 // generic packets
-const uint8_t FAIL_PACKET             = 0;                // message
-const uint8_t SUCCESS_PACKET          = 1;                // message (?)
-const uint8_t QUIT_PACKET             = 2;                // no payload
+const int8_t QUIT_PACKET             = 1;                 // no payload
+const int8_t FAIL_PACKET             = 2;                 // message
+const int8_t SUCCESS_PACKET          = 3;                 // message
 
 // server only accepts these packets at the top of the loop
-const uint8_t CREATE_ACCOUNT_PACKET   = 3;                // username (to KDC)
-const uint8_t LOGIN_PACKET            = 4;                // username
-const uint8_t CREDENTIALS_PACKET      = 5;                // session key and TGT encrypted with user key
-const uint8_t REQUEST_PACKET          = 6;                // target name + TGT + authenticator
+const int8_t CREATE_ACCOUNT_PACKET   = 4;                 // username (to KDC)
+const int8_t LOGIN_PACKET            = 5;                 // username
+const int8_t CREDENTIALS_PACKET      = 6;                 // session key and TGT encrypted with user key
+const int8_t REQUEST_PACKET          = 7;                 // target name + TGT + authenticator
 
 // packets created after starting packets
-const uint8_t INITIAL_SEND_PACKET     = 7;                // 4 octet packet count
-const uint8_t SYM_ENCRYPTED_PACKET    = 8;                // symmetrically encrypted data
-const uint8_t PUBLIC_KEY_PACKET       = 9;                // a PGP Public Key Block
+const int8_t REPLY_PACKET            = 8;                 // response to request packet
+const int8_t INITIAL_SEND_PACKET     = 9;                 // 4 octet packet count + 1 octet expected type
+const int8_t SYM_ENCRYPTED_PACKET    = 10;                // symmetrically encrypted data
+const int8_t PUBLIC_KEY_PACKET       = 11;                // a PGP Public Key Block
 
-const uint8_t TICKET_PACKET           = 11;               // E_{SA}(target, S_AB, E_{K_B}(client, S_AB))
-const uint8_t AUTHENTICATOR_PACKET    = 12;               //
+// session packets
+const int8_t START_TALK_PACKET       = 12;                // request from a client to another to start session
+const int8_t TALK_PACKET             = 13;                // normal conversation packet
+const int8_t END_TALK_PACKET         = 14;                // terminate session packet
 
-// const uint8_t _PACKET = ;
+// const int8_t _PACKET = ;
 
 // generate random octets
 std::string random_octets(const unsigned int count = 0);

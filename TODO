@@ -11,3 +11,5 @@ master key to decrypt KDC subkeys
 prevent too many login attempts on same account
 missing error message if server crashes before client stops
 add try/catch for things in OpenPGP that can throw
+listening socket in client for talking to another client
+send_packets/recv_packets moving bad data for some reason. Leftover data in sock is messing with communications

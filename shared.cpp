@@ -97,6 +97,7 @@ int send_packets(int sock, const uint8_t & type, const std::string & data){
 int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & data){
     // recv initial packet
     std::string packet;
+
     int rc = recv(sock, packet);
     if (rc != network_message(rc)){
         return rc;
@@ -106,8 +107,6 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
         return -1;
     }
 
-    std::cout << (int) packet[0] << std::endl;
-    
     if (packet[0] != INITIAL_SEND_PACKET){
         std::cerr << "Error: First packet is not initial send packet" << std::endl;
         return -1;
@@ -131,20 +130,24 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
 
     data = std::string(1, expected_type);                        // set first character as type
 
-    while (data.size() < octets){
+    int out = expected_type;
+    while ((rc != -1) && (data.size() < octets)){
         rc = recv(sock, packet);
         if (rc != network_message(rc)){
-            return rc;
+            out = rc;
+            continue;
         }
 
         if (!unpacketize(packet)){
-            return -1;
+            out = -1;
+            continue;
         }
 
         if (packet[0] != expected_type){
             std::cerr << "Error: Received unexpected packet type" << std::endl;
-            return -1;
+            out = -1;
+            continue;
         }
     }
-    return PACKET_SIZE;                                          // any arbitrary int greater than 0
+    return out;                                                 // any arbitrary int greater than 0
 }
