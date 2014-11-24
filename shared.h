@@ -95,10 +95,14 @@ const int8_t TALK_PACKET             = 12;                // encrypted data
 const int8_t END_TALK_PACKET         = 13;                // no payload
 
 // special packets
-const int8_t IP_PACKET               = 14;                // initial packet sent to server side
+const int8_t IP_PACKET               = 14;                // 4 octet ip address
 const int8_t INITIAL_SEND_PACKET     = 15;                // 4 octet packet count + 1 octet expected type
 
 // const int8_t _PACKET = ;
+
+// returns network sockets or error values
+int create_server_socket(const uint16_t port);
+int create_client_socket(const std::array <uint8_t, 4> & ip, const uint16_t port);
 
 // non-blocking read from stdin (like std::getline)
 int nonblock_getline(std::string & str, const std::string & delim = "\n");

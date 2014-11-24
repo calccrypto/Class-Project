@@ -1,5 +1,56 @@
 #include "shared.h"
 
+int create_server_socket(const uint16_t port){
+    int lsock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if(!lsock)
+    {
+        std::cerr << "Fail to create socket" << std::endl;
+        return -1;
+    }
+    std::cout << "Socket created with port " << port << "." << std::endl;
+
+    //listening address
+    sockaddr_in addr_l;
+    addr_l.sin_family = AF_INET;
+    addr_l.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr_l.sin_port = htons(port);
+    
+    if(0 != bind(lsock, reinterpret_cast<sockaddr*>(&addr_l), sizeof(addr_l)))
+    {
+        std::cerr << "failed to bind socket." << std::endl;
+        return -1;
+    }
+    std::cout << "Finished binding to socket." << std::endl;
+    if(0 != listen(lsock, SOMAXCONN))
+    {
+        std::cerr << "failed to listen on socket." << std::endl;
+        return -1;
+    }
+    
+    return lsock;
+}
+
+int create_client_socket(const std::array <uint8_t, 4> & ip, const uint16_t port){
+    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if(!sock){
+        std::cerr << "Error: Failed to create socket" << std::endl;
+        return -1;
+    }
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    unsigned char* ipaddr = reinterpret_cast<unsigned char*>(&addr.sin_addr);
+    ipaddr[0] = ip[0];
+    ipaddr[1] = ip[1];
+    ipaddr[2] = ip[2];
+    ipaddr[3] = ip[3];
+    if(0 != connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr))){
+        std::cerr << "Error: Failed to connect to " << (int) ip[0] << "." << (int) ip[1] << "." << (int) ip[2] << "." << (int) ip[3] << " on port " << port << std::endl;
+        return -1;
+    }
+    return sock;
+}
+
 int nonblock_getline(std::string & str, const std::string & delim){
     int rc = 0;
     if (fcntl(0, F_SETFL, fcntl(0, F_GETFL) | O_NONBLOCK) < 0){

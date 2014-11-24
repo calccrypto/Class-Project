@@ -103,8 +103,6 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
         // parse input
         if (client){                                    // if identity is established
             if (packet[0] == REQUEST_PACKET){           // client wants to talk to someone
-                // parse request packet
-
                 // check that target exists
                 User * target = NULL;
                 for(User const & u : *(args -> get_users())){
@@ -143,6 +141,19 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
 
                 // create reply packet
+                //
+                // 4 octets - N = length client name
+                // N octets - client name
+                // 4 octets - ip address
+                // 2 octets - port
+                // KEY_SIZE >> 3 octets - shared key
+                //
+                // Encrypt above data with KB
+                //
+                // target name + shared key + encrypted data + hash
+                //
+                // Encrypt above data with SA
+                //
                 std::string KAB = random_octets(KEY_SIZE >> 3); // key shared between 2 users
                 std::string ticket = client -> get_name();
                 ticket = unhexlify(makehex(ticket.size(), 8)) + ticket + KAB;
@@ -565,32 +576,10 @@ int main(int argc, char * argv[]){
     std::cout << std::endl;
 
     //socket setup
-    int lsock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if(!lsock)
-    {
-        std::cerr << "Fail to create socket" << std::endl;
+    int lsock = create_server_socket(port);
+    if (lsock == -1){
         return -1;
     }
-    std::cout << "Socket created with port " << port << "." << std::endl;
-
-    //listening address
-    sockaddr_in addr_l;
-    addr_l.sin_family = AF_INET;
-    addr_l.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr_l.sin_port = htons(port);
-
-    if(0 != bind(lsock, reinterpret_cast<sockaddr*>(&addr_l), sizeof(addr_l)))
-    {
-        std::cerr << "failed to bind socket." << std::endl;
-        return -1;
-    }
-    std::cout << "Finished binding to socket." << std::endl;
-    if(0 != listen(lsock, SOMAXCONN))
-    {
-        std::cerr << "failed to listen on socket." << std::endl;
-        return -1;
-    }
-    std::cout << "Listening on socket." << std::endl << std::endl;
 
     // put together variables to pass into administrator thread
     std::set <User> users;                          // list of all users
