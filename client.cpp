@@ -77,44 +77,6 @@ std::array <uint8_t, 4> my_ip(){
     return parse_ip(ip_stream.str());
 }
 
-// non-blocking read from stdin (like std::getline)
-// stores all whitespace;
-int nonblock_getline(std::string & str, const std::string & delim = "\n"){
-    int rc = 0;
-    if (fcntl(0, F_SETFL, fcntl(0, F_GETFL) | O_NONBLOCK) < 0){
-        std::cerr << "Error: Could not make stdin non-blocking" << std::endl;
-        rc = -1;
-    }
-    else{
-        // get character
-        int c;
-        if ((c = getchar()) == EOF){
-            rc = 0;
-        }
-        else{
-            // check if the character is a deliminator
-            for(char const & d : delim){
-                if (c == d){
-                    rc = 1;
-                    break;
-                }
-            }
-
-            if (rc == 0){
-                // add character to string
-                str += std::string(1, (uint8_t) c);
-            }
-        }
-    }
-
-    if (fcntl(0, F_SETFL, fcntl(0, F_GETFL) & ~O_NONBLOCK) < 0){
-        std::cerr << "Error: Could not make stdin blocking" << std::endl;
-        rc = -1;
-    }
-
-    return rc;
-}
-
 int main(int argc, char * argv[]){
     BBS(static_cast <PGPMPI> (static_cast <unsigned int> (now())));
 
@@ -180,7 +142,6 @@ int main(int argc, char * argv[]){
         std::cerr << "Error: Could not send ip to server" << std::endl;
         quit = true;
     }
-    std::cout << "sent ip " << quit << std::endl;
 
     // commandline
     std::cout << "> ";
@@ -189,7 +150,10 @@ int main(int argc, char * argv[]){
         if (username && !KAB && !ticket){
             // expect random packets to come in
             if ((rc = recv_packets(sock, {START_TALK_PACKET}, packet)) < 1){
-                std::cerr << "Error: Received bad data from random packet" << std::endl;
+                // if (rc == -1){
+                    // std::cerr << "Error: Received bad data from random packet" << std::endl;
+                // }
+                // continuel
             }
             else{
                 // no other packets should make it here (ignore them anyway)
@@ -205,7 +169,10 @@ int main(int argc, char * argv[]){
             // receive from other end
             // need non-blocking receive
             if ((rc = recv_packets(sock, {TALK_PACKET, END_TALK_PACKET}, packet)) < 1){
-                std::cerr << "Error: Received bad data from" << std::endl;
+                // if (rc == -1){
+                    // std::cerr << "Error: Received bad data from" << std::endl;
+                // }
+                // continue;
             }
             else{
                 // no other packets should make it here (ignore them anyway)
@@ -236,7 +203,6 @@ int main(int argc, char * argv[]){
                             // send quit to server
                             if ((rc = send_packets(sock, QUIT_PACKET, "")) < 0){
                                 std::cerr << "Error: Could not terminate connection" << std::endl;
-                                continue;
                             }
                             quit = true;
                         }
@@ -265,7 +231,6 @@ int main(int argc, char * argv[]){
                                      unhexlify(makehex(packet.size(), 8)) + packet;         // authenticator
 
                             if ((rc = send_packets(sock, REQUEST_PACKET, packet)) < 1){
-                                std::cerr << "Error: Could not send request packet" << std::endl;
                                 continue;
                             }
 
@@ -320,7 +285,6 @@ int main(int argc, char * argv[]){
                             // send quit to other side (does not force other end to end program)
                             if ((rc = send_packets(tsock, END_TALK_PACKET, "")) < 0){
                                 std::cerr << "Error: Could not terminate connection" << std::endl;
-                                continue;
                             }
                             quit = true;
                             std::cout << "Session has terminated" << std::endl;
@@ -363,7 +327,6 @@ int main(int argc, char * argv[]){
                         // send quit to server
                         if ((rc = send_packets(sock, QUIT_PACKET, "")) < 0){
                             std::cerr << "Error: Could not terminate connection" << std::endl;
-                            continue;
                         }
                         quit = true;
                     }
@@ -379,9 +342,13 @@ int main(int argc, char * argv[]){
 
                         // client transforms password into key
                         std::string KA = HASH(password).digest();
-                        if ((rc = send_packets(sock, LOGIN_PACKET, *username)) < 1){
+
+                        // send login request
+                        packet = unhexlify(makehex(username -> size(), 8)) + *username;
+                        if ((rc = send_packets(sock, LOGIN_PACKET, packet)) < 1){
                             std::cerr << "Error: Request for TGT Failed" << std::endl;
                             delete username; username = NULL;
+                            input = "";
                             continue;
                         }
                         std::cout << "Sent login packet" << std::endl;
@@ -390,6 +357,7 @@ int main(int argc, char * argv[]){
                         if ((rc = recv_packets(sock, {FAIL_PACKET, QUIT_PACKET, CREDENTIALS_PACKET}, packet)) < 1){
                             std::cerr << "Error: Could not receive session key" << std::endl;
                             delete username; username = NULL;
+                            input = "";
                             continue;
                         }
                         if (packet[0] == CREDENTIALS_PACKET){
@@ -403,6 +371,7 @@ int main(int argc, char * argv[]){
                         else if (packet[0] == FAIL_PACKET){
                             std::cerr << packet.substr(1, packet.size() - 1) << std::endl;
                             delete username; username = NULL;
+                            input = "";
                             continue;
                         }
                         // sort of authenticated at this point
@@ -482,10 +451,9 @@ int main(int argc, char * argv[]){
                     delete KAB; KAB = NULL;
                     delete ticket; ticket = NULL;
                 }
-
-                input = "";
-                std::cout << "> ";
             }
+            input = "";
+            std::cout << "> ";
         }
         else if (in_rc == -1){// if stdin could not be switched between blocking and nonblocking, end program
             if ((rc = send_packets(sock, QUIT_PACKET, "")) < 0){

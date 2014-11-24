@@ -100,6 +100,9 @@ const int8_t INITIAL_SEND_PACKET     = 15;                // 4 octet packet coun
 
 // const int8_t _PACKET = ;
 
+// non-blocking read from stdin (like std::getline)
+int nonblock_getline(std::string & str, const std::string & delim = "\n");
+
 // generate random octets
 std::string random_octets(const unsigned int count = 0);
 
@@ -120,13 +123,10 @@ bool packetize(const uint8_t & type, std::string & packet);
 // Takes packetized data and writes packet type + data into variable packet
 bool unpacketize(std::string & packet);
 
-// simple send/recv error messages; if output != input, error
-int network_message(const int & rc);
-
 // pack and send multiple packets worth of data
-int send_packets(int sock, const uint8_t & type, const std::string & data);
+int send_packets(int sock, const uint8_t & type, const std::string & data, const std::string & err = "Could not send data");
 
 // receive and unpack multiple packets of data
-int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & data);
+int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & data, const std::string & err = "Could not receive data" );
 
 // probably also want encrypted send/recv

@@ -1,5 +1,41 @@
 #include "shared.h"
 
+int nonblock_getline(std::string & str, const std::string & delim){
+    int rc = 0;
+    if (fcntl(0, F_SETFL, fcntl(0, F_GETFL) | O_NONBLOCK) < 0){
+        std::cerr << "Error: Could not make stdin non-blocking" << std::endl;
+        rc = -1;
+    }
+    else{
+        // get character
+        int c;
+        if ((c = getchar()) == EOF){
+            rc = 0;
+        }
+        else{
+            // check if the character is a deliminator
+            for(char const & d : delim){
+                if (c == d){
+                    rc = 1;
+                    break;
+                }
+            }
+
+            if (rc == 0){
+                // add character to string
+                str += std::string(1, (uint8_t) c);
+            }
+        }
+    }
+
+    if (fcntl(0, F_SETFL, fcntl(0, F_GETFL) & ~O_NONBLOCK) < 0){
+        std::cerr << "Error: Could not make stdin blocking" << std::endl;
+        rc = -1;
+    }
+
+    return rc;
+}
+
 std::string random_octets(const unsigned int count){
     std::string out = "";
     while (out.size() < count){
@@ -65,19 +101,7 @@ bool unpacketize(std::string & packet){
     return true;
 }
 
-int network_message(const int & rc){
-    if (rc == 0){
-        std::cerr << "Error: Connection lost" << std::endl;
-        return 0;
-    }
-    else if (rc == -1){
-        std::cerr << "Error: Could not send data" << std::endl;
-        return -1;
-    }
-    return rc;
-}
-
-int send_packets(int sock, const uint8_t & type, const std::string & data){
+int send_packets(int sock, const uint8_t & type, const std::string & data, const std::string & err){
     int rc;
     size_t i;
 
@@ -95,7 +119,9 @@ int send_packets(int sock, const uint8_t & type, const std::string & data){
     while (i < PACKET_SIZE){
         const char * buf = packet.c_str();
         if ((rc = send(sock, buf + i, PACKET_SIZE - i, 0)) < 1){
-            network_message(rc);
+            if (rc == -1){
+                std::cerr << "Error: Could not send initial packet" << std::endl;
+            }
             return rc;
         }
         i += rc;
@@ -115,7 +141,9 @@ int send_packets(int sock, const uint8_t & type, const std::string & data){
         while (i < PACKET_SIZE){
             const char * buf = packet.c_str();
             if ((rc = send(sock, buf + i, PACKET_SIZE - i, 0)) < 1){
-                network_message(rc);
+                if (rc == -1){
+                    std::cerr << "Error: " << err << std::endl;
+                }
                 return rc;
             }
             i += rc;
@@ -125,7 +153,7 @@ int send_packets(int sock, const uint8_t & type, const std::string & data){
     return 1;
 }
 
-int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & data){
+int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & data, const std::string & err){
     std::string packet;
     int rc;
     char buf[PACKET_SIZE];
@@ -136,7 +164,9 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
     while (packet.size() < PACKET_SIZE){
         memset(buf, 0, sizeof(char) * PACKET_SIZE); // zero out buffer
         if ((rc = recv(sock, buf, PACKET_SIZE, 0)) < 1){
-            network_message(rc);
+            if (rc == -1){
+                std::cerr << "Error: Could not receive initial packet" << std::endl;
+            }
             return rc;
         }
         packet += std::string(buf, rc);
@@ -177,7 +207,9 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
         while (packet.size() < PACKET_SIZE){
             memset(buf, 0, sizeof(char) * PACKET_SIZE); // zero out buffer
             if ((rc = recv(sock, buf, PACKET_SIZE, 0)) < 1){
-                network_message(rc);
+                if (rc == -1){
+                    std::cerr << "Error: " << err << std::endl;
+                }
                 return rc;
             }
             packet += std::string(buf, rc);
