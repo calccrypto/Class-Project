@@ -1,0 +1,43 @@
+# Modified from https://github.com/calccrypto/OpenPGP/blob/master/.travis.yml
+# which mugwort-rc added to https://github.com/calccrypto/OpenPGP
+language: cpp
+
+# from <http://stackoverflow.com/questions/22111549/travis-ci-with-clang-3-4-and-c11>
+
+compiler:
+  - clang
+  - gcc
+
+before_install:
+  # g++4.9.1
+  - if [ "$CXX" == "g++" ]; then sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test; fi
+
+  # clang 3.5
+  - if [ "$CXX" == "clang++" ]; then sudo add-apt-repository -y ppa:h-rayflood/llvm; fi
+
+  - sudo apt-get update -qq
+
+  # g++4.9.1
+  - if [ "$CXX" = "g++" ]; then sudo apt-get install -qq g++-4.9; fi
+  - if [ "$CXX" = "g++" ]; then export CXX="g++-4.9"; fi
+
+  # clang 3.5
+  - if [ "$CXX" == "clang++" ]; then sudo apt-get install --allow-unauthenticated -qq clang-3.5; fi
+  - if [ "$CXX" == "clang++" ]; then export CXX="clang++-3.5"; fi
+
+  - sudo apt-get install libgmp-dev
+  - sudo apt-get install libbz2-dev
+  - sudo apt-get install zlib1g-dev
+  - sudo apt-get install libzip-dev
+  - sudo apt-get install git-core
+  - sudo apt-get install wget
+
+before_script:
+  # build OpenPGP
+  - wget https://github.com/calccrypto/OpenPGP/archive/master.zip
+  - tar -x master.zip -C ../OpenPGP
+  - cd ../OpenPGP && make
+
+script:
+  # compile this project
+  - cd $TRAVIS_BUILD_DIR && make

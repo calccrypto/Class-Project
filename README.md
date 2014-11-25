@@ -3,14 +3,14 @@
 Copyright (c) 2014 Omar Azhar
 Copyright (c) 2014 Jason Lee @ calccrypto at gmail.com
 
-Please see LICENSE file for license. The networking code
-was modified from code written by Andrew Zonenberg.
+Please see LICENSE file for license. The networking code was modified from code written by Andrew Zonenberg.
 
 ## IMPORTANT
 **This code was not written for actual use.**
 
 **It is the final project for our Fall 2014 Computer Security course, nothing more.**
 
+## Requirements
 - POSIX libraries are required for sockets.
 - C++11 threads are used instead of POSIX.
 - --curlcpp (<https://github.com/JosephP91/curlcpp>) is needed to get the client's ip address--
