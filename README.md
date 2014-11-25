@@ -5,8 +5,6 @@ Copyright (c) 2014 Jason Lee @ calccrypto at gmail.com
 
 Please see LICENSE file for license. The networking code was modified from code written by Andrew Zonenberg.
 
-[![Build Status](https://travis-ci.org/calccrypto/Class-Project.svg?branch=master)](https://travis-ci.org/calccrypto/Class-Project)
-
 ## IMPORTANT
 **This code was not written for actual use.**
 
