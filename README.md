@@ -13,9 +13,9 @@ Please see LICENSE file for license. The networking code was modified from code 
 ## Requirements
 - POSIX libraries are required for sockets.
 - C++11 threads are used instead of POSIX.
-- --curlcpp (<https://github.com/JosephP91/curlcpp>) is needed to get the client's ip address--
-  - --curl, required by curlcpp (<http://curl.haxx.se/>, `sudo apt-get install libcurl-devel`, etc)--
-  - --In `curlcpp/`, run `cmake CmakeLists.txt && make` to build--
+- ~~curlcpp (<https://github.com/JosephP91/curlcpp>) is needed to get the client's ip address~~
+  - ~~curl, required by curlcpp (<http://curl.haxx.se/>, `sudo apt-get install libcurl-devel`, etc)~~
+  - ~~In `curlcpp/`, run `cmake CmakeLists.txt && make` to build~~
   - currently don't need due to localhost being sent to server as client IP address
 - OpenPGP (https://github.com/calccrypto/OpenPGP), and its dependencies:
   - GMP (<https://gmplib.org/>, `sudo apt-get install libdev-gmp`, etc)
