@@ -79,30 +79,36 @@ const int8_t FAIL_PACKET             = 2;                 // message
 const int8_t SUCCESS_PACKET          = 3;                 // message
 
 // server only accepts these packets at the top of the loop
-const int8_t CREATE_ACCOUNT_PACKET   = 4;                 // username (to KDC)
+const int8_t CREATE_ACCOUNT_PACKET   = 4;                 // username
 const int8_t LOGIN_PACKET            = 5;                 // username
 const int8_t CREDENTIALS_PACKET      = 6;                 // session key and TGT encrypted with user key
 const int8_t REQUEST_PACKET          = 7;                 // target name + TGT + authenticator
 
 // packets created after starting packets
-const int8_t REPLY_PACKET            = 8;                 // response to request packet
-const int8_t SYM_ENCRYPTED_PACKET    = 9;                 // symmetrically encrypted data
-const int8_t PUBLIC_KEY_PACKET       = 10;                // a PGP Public Key Block
+const int8_t LOGOUT_PACKET           = 8;                 // no payload
+const int8_t REPLY_PACKET            = 9;                 // response to request packet
+const int8_t SYM_ENCRYPTED_PACKET    = 10;                // symmetrically encrypted data
+const int8_t PUBLIC_KEY_PACKET       = 11;                // a PGP Public Key Block
 
 // session packets
-const int8_t START_TALK_PACKET       = 11;                // ticket + authenticator
-const int8_t TALK_PACKET             = 12;                // encrypted data
-const int8_t END_TALK_PACKET         = 13;                // no payload
+const int8_t START_TALK_PACKET       = 12;                // ticket + authenticator
+const int8_t TALK_PACKET             = 13;                // encrypted data
+const int8_t END_TALK_PACKET         = 14;                // no payload
 
 // special packets
-const int8_t IP_PACKET               = 14;                // 4 octet ip address
-const int8_t INITIAL_SEND_PACKET     = 15;                // 4 octet packet count + 1 octet expected type
+const int8_t IP_PACKET               = 15;                // 4 octet ip address
+const int8_t INITIAL_SEND_PACKET     = 16;                // 4 octet packet count + 1 octet expected type
 
 // const int8_t _PACKET = ;
 
 // returns network sockets or error values
 int create_server_socket(const uint16_t port);
 int create_client_socket(const std::array <uint8_t, 4> & ip, const uint16_t port);
+
+// set a file descriptor to nonblocking or blocking mode
+// return value is error, not the file descriptor
+int nonblock(int fd);
+int block(int fd);
 
 // non-blocking read from stdin (like std::getline)
 int nonblock_getline(std::string & str, const std::string & delim = "\n");
@@ -113,12 +119,6 @@ std::string random_octets(const unsigned int count = 0);
 // parse IPv4 strings for the form A.B.C.D
 std::array <uint8_t, 4> parse_ip(const std::string & str);
 std::array <uint8_t, 4> parse_ip(char * buf);
-
-// send single packet and check if it was sent properly
-int send(int sock, const std::string & data);
-
-// receive single packet and check if all was received properly
-int recv(int sock, std::string & data);
 
 // Takes some data and adds a 4 octet length to the front and pads the rest of the packet with garbage
 // returns false if input packet was too long

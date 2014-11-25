@@ -33,7 +33,7 @@ threaddata.o: threaddata.h threaddata.cpp user.h
 	$(CXX) $(CFLAGS) -c threaddata.cpp
 
 $(TARGET): shared.o client.o server.o user.o TGT.o threaddata.o
-	$(CXX) $(CFLAGS) client.o shared.o $(LFLAGS) -lcurlcpp -lcurl -L../curlcpp/src -o client
+	$(CXX) $(CFLAGS) client.o shared.o $(LFLAGS) -o client # -lcurlcpp -lcurl -L../curlcpp/src
 	$(CXX) $(CFLAGS) server.o shared.o TGT.o user.o threaddata.o $(LFLAGS) -o server
 
 clean:

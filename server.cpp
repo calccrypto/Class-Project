@@ -68,8 +68,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
     std::string packet = " ";
 
     // get initial packet with ip address
-    if ((rc = recv_packets(args -> get_sock(), {IP_PACKET}, packet)) < 1){
-        std::cerr << "Error: Could not receive initial packet" << std::endl;
+    if ((rc = recv_packets(args -> get_sock(), {IP_PACKET}, packet, "Could not receive initial packet")) < 1){
         args -> set_quit(true);
     }
     else{
@@ -79,16 +78,14 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
     // accept commands
     while (!quit && !(args -> get_quit()) && rc){
-        std::cout << "Waiting for packets" << std::endl;
-        if ((rc = recv_packets(args -> get_sock(), {QUIT_PACKET, CREATE_ACCOUNT_PACKET, LOGIN_PACKET, REQUEST_PACKET}, packet)) < 1){
+        if ((rc = recv_packets(args -> get_sock(), {QUIT_PACKET, CREATE_ACCOUNT_PACKET, LOGIN_PACKET, REQUEST_PACKET, LOGOUT_PACKET}, packet, "Could not receive packets")) < 1){
             continue;
         }
 
-        std::cout << "received data" << std::endl;
+        int8_t type = packet[0];
 
         // quit works no matter what
-        if (packet[0] == QUIT_PACKET){
-            std::cout << "Received command to quit" << std::endl;
+        if (type == QUIT_PACKET){
             // clean up data
             delete client; client = NULL;
             delete SA; SA = NULL;
@@ -96,13 +93,18 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             break;
         }
 
-        // all other packet types should have a payload
         uint32_t len = toint(packet.substr(1, 4), 256);
-        packet = packet.substr(5, len);
+        if (len){
+            packet = packet.substr(5, len);
+        }
 
         // parse input
         if (client){                                    // if identity is established
-            if (packet[0] == REQUEST_PACKET){           // client wants to talk to someone
+            if (type == LOGOUT_PACKET){
+                delete client; client = NULL;
+                delete SA; SA = NULL;
+            }
+            else if (type == REQUEST_PACKET){           // client wants to talk to someone
                 // check that target exists
                 User * target = NULL;
                 for(User const & u : *(args -> get_users())){
@@ -169,8 +171,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             }
         }
         else{                               // if not logged in, only allow for creating account and logging in
-            if (packet[0] == LOGIN_PACKET){
-                std::cout << "login packet received" << std::endl;
+            if (type == LOGIN_PACKET){
                 std::string username = packet;
 
                 // search database for user
@@ -195,18 +196,16 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                     packet = *SA + unhexlify(makehex(packet.size(), 8)) + packet;
                     packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, client -> get_key(), random_octets(BLOCK_SIZE >> 3));     // encrypt session key with user's shared key
 
-                    if ((rc = send_packets(args -> get_sock(), CREDENTIALS_PACKET, packet)) < 1){
+                    if ((rc = send_packets(args -> get_sock(), CREDENTIALS_PACKET, packet, "Could not send session key and TGT")) < 1){
                         continue;
                     }
                 }
                 else{           // user not found
-                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Could not find username")) < 1){}
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Could not find username", "Could not send failure message")) < 1){}
                     continue;
                 }
-
-                std::cout << "Done logging in" << std::endl;
             }
-            else if (packet[0] == CREATE_ACCOUNT_PACKET){                    // create new account
+            else if (type == CREATE_ACCOUNT_PACKET){                    // create new account
                 std::string new_username = packet;
                 std::cout << "Received request for new account for " << new_username << std::endl;
 
@@ -244,7 +243,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 if ((rc = recv_packets(args -> get_sock(), {FAIL_PACKET, SYM_ENCRYPTED_PACKET}, packet)) < 1){
                     continue;
                 }
-                if (packet[0] == SYM_ENCRYPTED_PACKET){
+                if (type == SYM_ENCRYPTED_PACKET){
                     packet = packet.substr(1, packet.size());
                     std::ifstream pri_file(private_key_file, std::ios::binary);
                     if (!pri_file){
@@ -270,7 +269,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                     mutex.unlock();
 
                 }
-                else if (packet[0] == FAIL_PACKET){
+                else if (type == FAIL_PACKET){
                     std::cerr << packet.substr(1, packet.size() - 1) << std::endl;
                     continue;
                 }
@@ -417,8 +416,7 @@ unsigned int clean_threads(std::map <ThreadData *, std::thread> & threads, std::
             t.second.join();
             ThreadData * temp = t.first;
             threads.erase(temp);
-            delete temp;
-            deleted++;
+            delete temp; temp = NULL;
             mutex.unlock();
         }
     }
@@ -511,15 +509,15 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
                         }
                         if (found){
                             std::cerr << "Error: Username already exists" << std::endl;
-                            continue;
                         }
-
-                        mutex.lock();
-                        User u;
-                        u.set_name(new_username);
-                        u.set_key(HASH(password).digest());
-                        users.insert(u);
-                        mutex.unlock();
+                        else{
+                            mutex.lock();
+                            User u;
+                            u.set_name(new_username);
+                            u.set_key(HASH(password).digest());
+                            users.insert(u);
+                            mutex.unlock();
+                        }
                     }
                     else{
                         std::cerr << "Syntax: add username password" << std::endl;
@@ -544,8 +542,11 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
         ThreadData * ptr = threads.begin() -> first;
         ptr -> set_quit(true);
 
-        if (send_packets(ptr -> get_sock(), QUIT_PACKET, "") < 1){
-            std::cerr << "Error: Could not send quit message to client " << ptr -> get_thread_id() << std::endl;
+        std::stringstream s;
+        s << "Error: Could not send quit message to client " << ptr -> get_thread_id();
+
+        if (send_packets(ptr -> get_sock(), QUIT_PACKET, "", s.str()) < 1){
+            std::cerr << s.str() << std::endl;
         }
 
         threads.begin() -> second.join();
