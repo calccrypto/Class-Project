@@ -127,10 +127,10 @@ int main(int argc, char * argv[]){
     std::string * SA = NULL;                        // session key (with KDC)
     std::string * tgt = NULL;                       // TGT (encrypted - no TGT type for client)
 
-    // KAB and ticket must both be NULL or point to something at the same time
+    // SAB and ticket must both be NULL or point to something at the same time
     std::array <uint8_t, 4> * target_ip = NULL;     // comes with reply packet
     uint16_t * target_port = NULL;                  // comes with reply packet
-    std::string * KAB = NULL;                       // key between two users
+    std::string * SAB = NULL;                       // key between two users
     std::string * ticket = NULL;                    // ticket to talk to someone
     bool talking = false;                           // whether or not a session is occurring
 
@@ -150,10 +150,10 @@ int main(int argc, char * argv[]){
     // commandline
     while (!quit && rc){
         // if the client has identification but no session information
-        if (username && !KAB && !ticket){
+        if (username && !SAB && !ticket){
             // expect packets to come in at any time
             rc = recv_packets(lsock, {START_TALK_PACKET}, packet, "Could not receive data from listening port." );
-            if (rc == -2){}     // received nothing
+            if (rc == -2){}                             // received nothing
             else if ((rc == -1) || (rc == 0)){          // bad socket
                 // restart socket (?)
                 close(lsock); lsock = -1;
@@ -166,7 +166,8 @@ int main(int argc, char * argv[]){
                 // no other packets should make it here (ignore them anyway)
                 if (packet[0] == START_TALK_PACKET){
                     // check data
-                    // reply to initiator
+                    // reply to initiator (yes or no)
+                    // talking = yes/no
                 }
                 else{
                     std::cout << "Error: Unexpected packet received" << std::endl;
@@ -175,14 +176,14 @@ int main(int argc, char * argv[]){
         }
 
         // immediately enter session state if client has identification and session information
-        if (username && KAB && ticket && talking){  // session has been established
+        if (username && SAB && ticket && talking){  // session has been established
             // receive from other end
             rc = recv_packets(lsock, {TALK_PACKET, END_TALK_PACKET}, packet, "Could not receive data.");
             if (rc == -2){}
             else if ((rc == -1) || (rc == 0)){
                     std::cout << "Error: Bad socket. Session terminated." << std::endl;
                     close(lsock); lsock = -1;
-                    delete KAB; KAB = NULL;
+                    delete SAB; SAB = NULL;
                     delete ticket; ticket = NULL;
                     talking = false;
             }
@@ -194,7 +195,7 @@ int main(int argc, char * argv[]){
                 else if (packet[0] == END_TALK_PACKET){
                     std::cout << /*client*/ " has terminated session." << std::endl;
                     close(lsock); lsock = -1;
-                    delete KAB; KAB = NULL;
+                    delete SAB; SAB = NULL;
                     delete ticket; ticket = NULL;
                 }
             }
@@ -211,7 +212,7 @@ int main(int argc, char * argv[]){
             std::stringstream s; s << input;
             if (s >> input){
                 if (username && SA && tgt){                                         // if has KCD credentials
-                    if ((!KAB && !ticket) || (KAB && ticket && !talking)){          // if does not have target or not talking to target
+                    if ((!SAB && !ticket) || (SAB && ticket && !talking)){          // if does not have target or not talking to target
                         if (input == "help"){
                             for(std::pair <std::string, std::string> const & help : CLIENT_LOGGED_IN_HELP){
                                 std::cout << help.first << " " << help.second << std::endl;
@@ -266,7 +267,7 @@ int main(int argc, char * argv[]){
                                 else{
                                     target_ip = new std::array <uint8_t, 4> ({(uint8_t) packet[4 + target_len], (uint8_t) packet[5 + target_len], (uint8_t) packet[6 + target_len], (uint8_t) packet[7 + target_len]});
                                     target_port = new uint16_t((((uint16_t) ((uint8_t) packet[8 + target_len])) << 8) + (uint8_t) packet[9 + target_len]);
-                                    KAB = new std::string(packet.substr(10 + target_len, KEY_SIZE >> 3));
+                                    SAB = new std::string(packet.substr(10 + target_len, KEY_SIZE >> 3));
                                     uint32_t ticket_len = toint(packet.substr(10 + target_len + (KEY_SIZE >> 3), 4));
                                     ticket = new std::string(packet.substr(10 + target_len + (KEY_SIZE >> 3) + 4, ticket_len));
                                 }
@@ -280,7 +281,7 @@ int main(int argc, char * argv[]){
                         }
                         else if (input == "talk"){
                             // both should always be the same value
-                            if (KAB && ticket){ // has target
+                            if (SAB && ticket){ // has target
                                 // change socket into a client
                                 close(lsock);
                                 lsock = create_client_socket(*target_ip, *target_port);
@@ -290,12 +291,15 @@ int main(int argc, char * argv[]){
                                 }
                                 else{
                                     // send initial packet
-                                    std::string authenticator = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, unhexlify(makehex(now(), 8)), *KAB, random_octets(BLOCK_SIZE >> 3));
+                                    std::string authenticator = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, unhexlify(makehex(now(), 8)), *SAB, random_octets(BLOCK_SIZE >> 3));
                                     packet = unhexlify(makehex(ticket -> size(), 8)) + *ticket + authenticator;
                                     if ((rc = send_packets(lsock, START_TALK_PACKET, packet, "Could not start session.")) < 1){
                                         continue;
                                     }
-                                    talking = true;
+
+                                    // wait for response
+
+                                    talking = true; // set with response packet
                                 }
                             }
                             else{                                                   // does not have target
@@ -307,21 +311,21 @@ int main(int argc, char * argv[]){
                             delete username; username = NULL;
                             delete SA; SA = NULL;
                             delete tgt; tgt = NULL;
-                            delete KAB; KAB = NULL;
+                            delete SAB; SAB = NULL;
                             delete ticket; ticket = NULL;
                             if ((rc = send_packets(sock, LOGOUT_PACKET, "", "Could not logout message.")) < 0){
                                 continue;
                             }
                         }
                         else if (input == "cancel"){                                // delete ticket before session even starts
-                            delete KAB; KAB = NULL;
+                            delete SAB; SAB = NULL;
                             delete ticket; ticket = NULL;
                         }
                         else{
                             std::cerr << "Error: Unknown input: " << input << "." << std::endl;
                         }
                     }
-                    else if (KAB && ticket && talking){                             // talking to someone
+                    else if (SAB && ticket && talking){                             // talking to someone
                         if (input == "\\help"){
                             for(std::pair <std::string, std::string> const & help : SESSION_HELP){
                                 std::cout << help.first << " " << help.second << std::endl;
@@ -333,7 +337,7 @@ int main(int argc, char * argv[]){
 
                             // clear session data
                             close(lsock); lsock = -1;
-                            delete KAB; KAB = NULL;
+                            delete SAB; SAB = NULL;
                             delete ticket; ticket = NULL;
                             std::cout << "Session has terminated." << std::endl;
 
@@ -350,9 +354,9 @@ int main(int argc, char * argv[]){
                         }
                     }
                     else{
-                        std::cerr << "Warning: Do not have both KAB and ticket. Erasing." << std::endl;
+                        std::cerr << "Warning: Do not have both SAB and ticket. Erasing." << std::endl;
                         close(lsock); lsock = -1;
-                        delete KAB; KAB = NULL;
+                        delete SAB; SAB = NULL;
                         delete ticket; ticket = NULL;
                     }
                 }
@@ -482,7 +486,7 @@ int main(int argc, char * argv[]){
                     close(lsock); lsock = -1;
                     delete SA; SA = NULL;
                     delete tgt; tgt = NULL;
-                    delete KAB; KAB = NULL;
+                    delete SAB; SAB = NULL;
                     delete ticket; ticket = NULL;
                 }
             }
@@ -504,7 +508,7 @@ int main(int argc, char * argv[]){
     delete username; username = NULL;
     delete SA; SA = NULL;
     delete tgt; tgt = NULL;
-    delete KAB; KAB = NULL;
+    delete SAB; SAB = NULL;
     delete ticket; ticket = NULL;
     delete target_ip; target_ip = NULL;
     delete target_port; target_port = NULL;

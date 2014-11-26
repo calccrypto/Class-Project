@@ -65,7 +65,7 @@ const unsigned int DIGEST_SIZE = HASH().digestsize();                           
 const uint8_t COMPRESSION_ALGORITHM = 1;                                        // default compression algorithm: ZLIB
 const uint32_t RESYNC = 18;                                                     // OpenPGP packet tag 18 triggers resync
 
-const uint32_t PACKET_SIZE = BLOCK_SIZE >> 2;             // 2 blocks per packet
+const uint32_t PACKET_SIZE = 128;                         // 256 octets per packet
 const uint32_t PACKET_HEADER_SIZE = 1;                    // 1 octet
 const uint32_t PACKET_SIZE_INDICATOR = 4;                 // 4 octets
 const uint32_t DATA_MAX_SIZE = PACKET_SIZE                // max size of payload in octets
@@ -92,12 +92,13 @@ const int8_t PUBLIC_KEY_PACKET       = 11;                // a PGP Public Key Bl
 
 // session packets
 const int8_t START_TALK_PACKET       = 12;                // ticket + authenticator
-const int8_t TALK_PACKET             = 13;                // encrypted data
-const int8_t END_TALK_PACKET         = 14;                // no payload (?)
+const int8_t START_TALK_REPLY_PACKET = 13;                // encrypted response of yes or no
+const int8_t TALK_PACKET             = 14;                // encrypted data
+const int8_t END_TALK_PACKET         = 15;                // no payload (?)
 
 // special packets
-const int8_t IP_PACKET               = 15;                // 4 octet ip address
-const int8_t INITIAL_SEND_PACKET     = 16;                // 4 octet packet count + 1 octet expected type
+const int8_t IP_PACKET               = 16;                // 4 octet ip address
+const int8_t INITIAL_SEND_PACKET     = 17;                // 4 octet packet count + 1 octet expected type
 
 // const int8_t _PACKET = ;
 
