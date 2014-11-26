@@ -85,7 +85,7 @@ const int8_t CREDENTIALS_PACKET      = 6;                 // session key and TGT
 const int8_t REQUEST_PACKET          = 7;                 // target name + TGT + authenticator
 
 // packets created after starting packets
-const int8_t LOGOUT_PACKET           = 8;                 // no payload
+const int8_t LOGOUT_PACKET           = 8;                 // no payload (?)
 const int8_t REPLY_PACKET            = 9;                 // response to request packet
 const int8_t SYM_ENCRYPTED_PACKET    = 10;                // symmetrically encrypted data
 const int8_t PUBLIC_KEY_PACKET       = 11;                // a PGP Public Key Block
@@ -93,7 +93,7 @@ const int8_t PUBLIC_KEY_PACKET       = 11;                // a PGP Public Key Bl
 // session packets
 const int8_t START_TALK_PACKET       = 12;                // ticket + authenticator
 const int8_t TALK_PACKET             = 13;                // encrypted data
-const int8_t END_TALK_PACKET         = 14;                // no payload
+const int8_t END_TALK_PACKET         = 14;                // no payload (?)
 
 // special packets
 const int8_t IP_PACKET               = 15;                // 4 octet ip address
@@ -107,7 +107,7 @@ int create_client_socket(const std::array <uint8_t, 4> & ip, const uint16_t port
 
 // set a file descriptor to nonblocking or blocking mode
 // return value is error, not the file descriptor
-int nonblock(int fd);
+int unblock(int fd);
 int block(int fd);
 
 // non-blocking read from stdin (like std::getline)
@@ -120,7 +120,8 @@ std::string random_octets(const unsigned int count = 0);
 std::array <uint8_t, 4> parse_ip(const std::string & str);
 std::array <uint8_t, 4> parse_ip(char * buf);
 
-// Takes some data and adds a 4 octet length to the front and pads the rest of the packet with garbage
+// Length-Type-Value format (instead of Type-Length-Value)
+// 4 octet Length (including Type) + 1 octet Type + Value + random padding data
 // returns false if input packet was too long
 bool packetize(const uint8_t & type, std::string & packet);
 

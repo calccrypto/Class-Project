@@ -115,7 +115,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 }
 
                 if (!target){
-                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Target not found")) < 1){}
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Target not found.")) < 1){}
                     continue;
                 }
 
@@ -129,13 +129,13 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 authenticator = authenticator.substr((DIGEST_SIZE >> 3) + 2, authenticator.size() - (DIGEST_SIZE >> 3) - 2);
 
                 if (authenticator.size() != 4){
-                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Bad timestamp size")) < 1){}
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Bad timestamp size.")) < 1){}
                     continue;
                 }
 
                 uint32_t timestamp = toint(authenticator, 256);
                 if ((now() - timestamp) > TIME_SKEW){
-                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Bad timestamp")) < 1){}
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Bad timestamp.")) < 1){}
                     continue;
                 }
 
@@ -196,18 +196,18 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                     packet = *SA + unhexlify(makehex(packet.size(), 8)) + packet;
                     packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, client -> get_key(), random_octets(BLOCK_SIZE >> 3));     // encrypt session key with user's shared key
 
-                    if ((rc = send_packets(args -> get_sock(), CREDENTIALS_PACKET, packet, "Could not send session key and TGT")) < 1){
+                    if ((rc = send_packets(args -> get_sock(), CREDENTIALS_PACKET, packet, "Could not send session key and TGT.")) < 1){
                         continue;
                     }
                 }
                 else{           // user not found
-                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Could not find username", "Could not send failure message")) < 1){}
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Could not find username.", "Could not send failure message.")) < 1){}
                     continue;
                 }
             }
             else if (type == CREATE_ACCOUNT_PACKET){                    // create new account
                 std::string new_username = packet;
-                std::cout << "Received request for new account for " << new_username << std::endl;
+                std::cout << "Received request for new account for " << new_username << "." << std::endl;
 
                 // search for user in database
                 bool exists = false;
@@ -220,7 +220,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
                 // don't allow duplicate names until unique IDs are properly implemented
                 if (exists){
-                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "User already exists")) < 1){}
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "User already exists.")) < 1){}
                     continue;
                 }
 
@@ -235,7 +235,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 }
                 else{                               // if not opened
                     std::cerr << "Could not open public key file \"" << public_key_file << "\"" << std::endl;
-                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Could not open public key")) < 1){}
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Could not open public key.")) < 1){}
                     continue;
                 }
 
@@ -248,7 +248,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                     std::ifstream pri_file(private_key_file, std::ios::binary);
                     if (!pri_file){
                         std::cerr << "Error: Unable to open \"" << private_key_file << "\"" << std::endl;
-                        if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Unable to open secret key")) < 1){
+                        if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Unable to open secret key.")) < 1){
                             continue;
                         }
                     }
@@ -265,7 +265,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                     // add new user to database (in memory)
                     mutex.lock();
                     args -> get_users() -> insert(new_user);
-                    std::cout << "Added new user: " << new_username << std::endl;
+                    std::cout << "Added new user: " << new_username << "." << std::endl;
                     mutex.unlock();
 
                 }
@@ -274,19 +274,19 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                     continue;
                 }
 
-                std::cout << "Done setting up account for " << new_username << std::endl;
+                std::cout << "Done setting up account for " << new_username << "." << std::endl;
             }
         }
     }
 
     if (!quit && !(args -> get_quit()) && !rc){
-        std::cerr << "Error: Lost connection" << std::endl;
+        std::cerr << "Error: Lost connection." << std::endl;
     }
 
     // close the socket
     close(args -> get_sock());
 
-    std::cout << "Thread " << args -> get_thread_id() << " terminated" << std::endl;
+    std::cout << "Thread " << args -> get_thread_id() << " terminated." << std::endl;
 
     return NULL;
 }
@@ -398,9 +398,9 @@ bool read_users(std::mutex & mutex, std::ifstream & save, std::set <User> & user
 bool read_users(std::mutex & mutex, const std::string & file, std::set <User> & users, const std::string & key){
     std::ifstream save(file, std::ios::binary);
     if (!save){
-        std::cerr << "Warning: Could not open file \"" << file << "\" - creating file" << std::endl;
+        std::cerr << "Warning: Could not open file \"" << file << "\" - creating file." << std::endl;
         if (!std::ofstream(file, std::ios::binary)){
-            std::cerr << "Error: Could not create file \"" << file << "\"" << std::endl;
+            std::cerr << "Error: Could not create file \"" << file << "\"." << std::endl;
             return false;
         }
         return true;
@@ -452,7 +452,7 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
                         std::cout << "Database saved" << std::endl;
                     }
                     else{
-                        std::cerr << "Error: Database could not be saved" << std::endl
+                        std::cerr << "Error: Database could not be saved." << std::endl
                                   << "Continue to exit? (y/n)";
                         std::string q;
                         std::cin >> q;
@@ -462,10 +462,10 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
                 }
                 else if (cmd == "save"){                        // save users into databsse
                     if (save_users(mutex, "user", users, secret_key)){
-                        std::cout << "Database saved" << std::endl;
+                        std::cout << "Database saved" << "." << std::endl;
                     }
                     else{
-                        std::cerr << "Error: Database could not be saved" << std::endl;
+                        std::cerr << "Error: Database could not be saved." << std::endl;
                     }
                 }
                 else if (cmd == "list"){
@@ -508,7 +508,7 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
                             }
                         }
                         if (found){
-                            std::cerr << "Error: Username already exists" << std::endl;
+                            std::cerr << "Error: Username already exists." << std::endl;
                         }
                         else{
                             mutex.lock();
@@ -529,7 +529,7 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
                     }
                 }
                 else{
-                    std::cerr << "Error: Unknown command \"" << cmd << "\"" << std::endl;
+                    std::cerr << "Error: Unknown command \"" << cmd << "\"." << std::endl;
                 }
             }
             cmd = "";
@@ -543,7 +543,7 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
         ptr -> set_quit(true);
 
         std::stringstream s;
-        s << "Error: Could not send quit message to client " << ptr -> get_thread_id();
+        s << "Error: Could not send quit message to client " << ptr -> get_thread_id() << ".";
 
         if (send_packets(ptr -> get_sock(), QUIT_PACKET, "", s.str()) < 1){
             std::cerr << s.str() << std::endl;
@@ -594,7 +594,7 @@ int main(int argc, char * argv[]){
        admin = std::thread(server_thread, std::ref(threads), std::ref(users), std::ref(mutex), std::ref(quit));
     }
     catch (std::system_error & sys_err){
-        std::cerr << "Could not create thread due to: " << sys_err.what() << std::endl;
+        std::cerr << "Could not create thread due to: " << sys_err.what() << "." << std::endl;
         return -1;
     }
 
@@ -620,12 +620,12 @@ int main(int argc, char * argv[]){
             threads[t_data] = std::thread(client_thread, t_data, std::ref(mutex), std::ref(quit));
         }
         catch (std::system_error & sys_err){
-            std::cerr << "Could not create thread due to: " << sys_err.what() << std::endl;
+            std::cerr << "Could not create thread due to: " << sys_err.what() << "." << std::endl;
         }
         mutex.unlock();
     }
 
-    std::cout << "Server has stopped" << std::endl;
+    std::cout << "Server has stopped." << std::endl;
     admin.join();
 
     close(lsock);

@@ -4,7 +4,7 @@ int create_server_socket(const uint16_t port){
     int lsock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if(!lsock)
     {
-        std::cerr << "Fail to create socket" << std::endl;
+        std::cerr << "Fail to create socket." << std::endl;
         return -1;
     }
     // std::cout << "Socket created with port " << port << "." << std::endl;
@@ -33,7 +33,7 @@ int create_server_socket(const uint16_t port){
 int create_client_socket(const std::array <uint8_t, 4> & ip, const uint16_t port){
     int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if(!sock){
-        std::cerr << "Error: Failed to create socket" << std::endl;
+        std::cerr << "Error: Failed to create socket." << std::endl;
         return -1;
     }
     sockaddr_in addr;
@@ -45,13 +45,13 @@ int create_client_socket(const std::array <uint8_t, 4> & ip, const uint16_t port
     ipaddr[2] = ip[2];
     ipaddr[3] = ip[3];
     if(0 != connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr))){
-        std::cerr << "Error: Failed to connect to " << (int) ip[0] << "." << (int) ip[1] << "." << (int) ip[2] << "." << (int) ip[3] << " on port " << port << std::endl;
+        std::cerr << "Error: Failed to connect to " << (int) ip[0] << "." << (int) ip[1] << "." << (int) ip[2] << "." << (int) ip[3] << " on port " << port << "." << std::endl;
         return -1;
     }
     return sock;
 }
 
-int nonblock(int fd){
+int unblock(int fd){
     return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
 }
 
@@ -60,8 +60,8 @@ int block(int fd){
 }
 
 int nonblock_getline(std::string & str, const std::string & delim){
-    if (nonblock(0) < 0){
-        std::cerr << "Error: Could not make stdin non-blocking" << std::endl;
+    if (unblock(0) < 0){
+        std::cerr << "Error: Could not make stdin non-blocking." << std::endl;
         return -1;
     }
 
@@ -86,7 +86,7 @@ int nonblock_getline(std::string & str, const std::string & delim){
     }
 
     if (block(0) < 0){
-        std::cerr << "Error: Could not make stdin blocking" << std::endl;
+        std::cerr << "Error: Could not make stdin blocking." << std::endl;
         return -1;
     }
 
@@ -112,7 +112,7 @@ std::array <uint8_t, 4> parse_ip(const std::string & str){
     char dot;
 
     if (!(s >> ip0 >> dot >> ip1 >> dot >> ip2 >> dot >> ip3)){
-        std::cerr << "Error: Could not parse ip address" << std::endl;
+        std::cerr << "Error: Could not parse ip address." << std::endl;
         return {};
     }
 
@@ -125,7 +125,7 @@ std::array <uint8_t, 4> parse_ip (char * buf){
 
 bool packetize(const uint8_t & type, std::string & packet){
     if (packet.size() > DATA_MAX_SIZE){
-        std::cerr << "Error: Data too long to pack" << std::endl;
+        std::cerr << "Error: Data too long to pack." << std::endl;
         return false;
     }
     packet = unhexlify(makehex(packet.size() + 1, 8)) + std::string(1, type) + packet;
@@ -135,12 +135,12 @@ bool packetize(const uint8_t & type, std::string & packet){
 
 bool unpacketize(std::string & packet){
     if (packet.size() != PACKET_SIZE){
-        std::cerr << "Error: Packet is the wrong length" << std::endl;
+        std::cerr << "Error: Packet is the wrong length." << std::endl;
         return false;
     }
     uint32_t length = toint(packet.substr(0, PACKET_SIZE_INDICATOR), 256);
     if (length > (packet.size() - PACKET_SIZE_INDICATOR)){
-        std::cerr << "Error: Given length is too long" << std::endl;
+        std::cerr << "Error: Given length is too long." << std::endl;
         return false;
     }
     packet = packet.substr(PACKET_SIZE_INDICATOR, length);
@@ -148,6 +148,15 @@ bool unpacketize(std::string & packet){
 }
 
 int send_packets(int sock, const uint8_t & type, const std::string & data, const std::string & err){
+    bool nonblocking = (bool) (fcntl(sock, F_GETFL) & O_NONBLOCK);
+    // sending is always done on blocking socket
+    if (nonblocking){
+        if (block(sock) < 0){
+            std::cerr << "Error: Could not make socket blocking." << std::endl;
+            return -1;
+        }
+    }
+
     int rc;
     size_t i;
 
@@ -169,7 +178,7 @@ int send_packets(int sock, const uint8_t & type, const std::string & data, const
         const char * buf = packet.c_str();
         if ((rc = send(sock, buf + i, PACKET_SIZE - i, 0)) < 1){
             if (rc == -1){
-                std::cerr << "Error: Could not send initial packet" << std::endl;
+                std::cerr << "Error: Could not send initial packet." << std::endl;
             }
             return rc;
         }
@@ -199,24 +208,56 @@ int send_packets(int sock, const uint8_t & type, const std::string & data, const
         }
     }
 
+    // unblock socket
+    if (nonblocking){
+        if (unblock(sock) < 0){
+            std::cerr << "Error: Could not make socket non-blocking." << std::endl;
+            return -1;
+        }
+    }
+
     return 1;
 }
 
 int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & data, const std::string & err){
-    std::string packet;
+    bool nonblocking = (bool) (fcntl(sock, F_GETFL) & O_NONBLOCK);
+
+    std::string packet = "";
     int rc;
     char buf[PACKET_SIZE];
 
+    if (nonblocking){                                       // if the socket is nonblocking
+        memset(buf, 0, sizeof(char) * PACKET_SIZE);         // zero out buffer
+        rc = recv(sock, buf, PACKET_SIZE, 0);
+        if (rc == 0){                                       // see if data has been received
+            return 0;                                       // lost connection
+        }
+        else if (rc == -1){
+            if ((errno == EAGAIN) || (errno == EWOULDBLOCK)){
+                return -2;                                  // special value for nonblocking receive
+            }
+            else{
+                return -1;
+            }
+        }
+        packet += std::string(buf, rc);
+        if (block(sock) < 0){                               // if data has be received, block the socket until all data has been received
+            std::cerr << "Error: Could not make socket blocking." << std::endl;
+            return -1;
+        }
+    }
+
     // recv initial packet
     // wait for all data
-    packet = "";
     while (packet.size() < PACKET_SIZE){
         memset(buf, 0, sizeof(char) * PACKET_SIZE); // zero out buffer
         if ((rc = recv(sock, buf, PACKET_SIZE, 0)) < 1){
-            if (rc == -1){
-                std::cerr << "Error: Could not receive initial packet" << std::endl;
+            if (!nonblocking){
+                if (rc == -1){
+                    std::cerr << "Error: Could not receive initial packet." << std::endl;
+                }
+                return rc;
             }
-            return rc;
         }
         packet += std::string(buf, rc);
     }
@@ -227,7 +268,7 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
     }
 
     if (packet[0] != INITIAL_SEND_PACKET){
-        std::cerr << "Error: First packet is not initial send packet" << std::endl;
+        std::cerr << "Error: First packet is not initial send packet." << std::endl;
         return -1;
     }
 
@@ -270,8 +311,16 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
 
     // if received bad data, return -1
     if (!allowed){
-        std::cerr << "Error: Received unexpected packet type" << std::endl;
+        std::cerr << "Error: Received unexpected packet type. Please ignore data." << std::endl;
         return -1;
+    }
+
+    // unblock socket
+    if (nonblocking){
+        if (unblock(sock) < 0){
+            std::cerr << "Error: Could not make socket non-blocking." << std::endl;
+            return -1;
+        }
     }
 
     return 1;
