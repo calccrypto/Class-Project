@@ -39,11 +39,10 @@ ThreadData is the argument type passed into the client thread.
 
 class ThreadData{
     private:
-        std::array <uint8_t, 4> ip_address;                 // ip address of client
         int sock;                                           // network socket
         std::string name;                                   // user of thread
         uint32_t thread_id;                                 // thread id (might not be necessary)
-        std::set <User> * users;                            // reference to set of all users currently online
+        std::set <User> * users;                            // reference to set of all users
         std::map <ThreadData *, std::thread> * threads;     // reference to all running threads
         bool quit;                                          // reference variable to tell thread to quit from outside of thread
 
@@ -51,8 +50,6 @@ class ThreadData{
         ThreadData();
 
         // Modifiers
-        void set_ip_address(const std::array <uint8_t, 4> & ip);
-        void set_ip_address(const uint8_t & ip0, const uint8_t & ip1, const uint8_t & ip2, const uint8_t & ip3);
         void set_sock(int s);
         void set_name(const std::string & n);
         void set_thread_id(const uint32_t & id);
@@ -61,7 +58,6 @@ class ThreadData{
         void set_quit(const bool & q);
 
         // Accessors
-        std::array <uint8_t,4 > get_ip_address() const;
         int get_sock() const;
         std::string get_name() const;
         uint32_t get_thread_id() const;

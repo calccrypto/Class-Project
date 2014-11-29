@@ -32,44 +32,51 @@ Header file for User class of Kerberos project
 
 #include "../OpenPGP/common/includes.h"
 
+#include "shared.h"
+
 class User {
     private:
-        // uint32_t uid;           // some unique identifier
-        uint64_t timeskew;      // amount of time allowed between creation of a packet and receiving it
-        std::string name;       // username
-        std::string key;        // key shared between user and KDC
+        uint8_t sym;            // symmetric key algorithm
+        uint8_t hash;           // hash algorithm   (implies size of fields)    (plaintext)
+        std::string salt;       // random octets                                (plaintext)
+        std::string uid;        // some unique identifier                       (plaintext)
+        std::string key;        // key shared between user and KDC              (ciphertext)
 
         /*
             Formatted string:
-                4 octets: uid
-                8 octets: timeskew
-                4 octets: N = name.size()
-                N octets: name
-                4 octets: K = key.size()
-                K octets: key
+                1 octet: symmetric key algorithm number
+                1 octet: hash number
+                DS octets: salt
+                DS octets: uid                                    (hash of salt and username)
+                4 octets: encrypted key length
+                encrypted with KDC key:
+                    DS octets random data
+                    DS octets: key
+                    DS octets: hash of encrypted data
         */
 
     public:
         User();
         User(const User & u);
         User(const std::string & formatted);
-        User(/*const uint32_t & UID,*/ const uint64_t & TIMESKEW, const std::string & NAME, const std::string KEY);
 
         // Modifiers
-        // void set_uid(const uint32_t & UID);
-        void set_timeskew(const uint64_t & TIMESKEW);
-        void set_name(const std::string & NAME);
+        // need to call once if using default constructor
+        void set_sym(const uint8_t & SYM);
+        void set_hash(const uint8_t & HASH);
+        void set_uid(const std::string & SALT, const std::string & NAME);
         void set_key(const std::string & KEY);
 
         // Accessors
-        // uint32_t get_uid() const;
-        uint64_t get_timeskew() const;
-        std::string get_name() const;
-        std::string get_key() const;
+        uint8_t get_sym() const;
+        uint8_t get_hash() const;
+        std::string get_salt() const;
+        std::string get_uid() const;
+        std::string get_key() const;   // encrypted
 
         // Operators
         User operator=(const User & u);
-        bool operator==(const std::string & u) const;
+        bool operator==(const std::string & name) const;
         bool operator==(const User & u) const;
         bool operator!=(const User & u) const;
         bool operator<(const User & u) const;

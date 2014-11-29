@@ -50,20 +50,24 @@ file for full license.
 
 #include "../OpenPGP/OpenPGP.h" // Encryptions and Hashes
 
+#ifndef __SHARED__
+#define __SHARED__
+
 const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1}; // 127.0.0.1
 const uint16_t DEFAULT_SERVER_PORT = 45678;               // Ephemeral port for KDC
 const uint16_t DEFAULT_TALK_PORT = 56789;                 // Ephemeral port for talking to another client
 const int32_t TIME_SKEW = 300;                            // seconds (5 minutes)
 
 typedef AES SYM;                                                                // default symmetric key algorithm for use without OpenPGP
-const uint8_t SYM_NUM = 9;                                                      // default symmetric key algorithm OpenPGP number: AES256
+const uint8_t SYM_NUM = 9;                                                      // default symmetric key algorithm OpenPGP number for AES256
 const std::string SYM_NAME = Symmetric_Algorithms.at(SYM_NUM);                  // default symmetric key algorithm name
 const unsigned int KEY_SIZE = Symmetric_Algorithm_Key_Length.at(SYM_NAME);      // symmetric key algorithm key size (bits)
 const unsigned int BLOCK_SIZE = Symmetric_Algorithm_Block_Length.at(SYM_NAME);  // symmetric key algorithm block size (bits)
 typedef SHA256 HASH;                                                            // default hashing algorithm for use without OpenPGP
+const uint8_t HASH_NUM = 8;                                                     // default hashing algorithm OpenPGP number for SHA256
 const unsigned int DIGEST_SIZE = HASH().digestsize();                           // hashing algorithm output size (bits)
 const uint8_t COMPRESSION_ALGORITHM = 1;                                        // default compression algorithm: ZLIB
-const uint32_t RESYNC = 18;                                                     // OpenPGP packet tag 18 triggers resync
+const uint32_t RESYNC = 18;                                                     // OpenPGP packet tag 18 does not trigger resync
 
 const uint32_t PACKET_SIZE = 128;                         // 256 octets per packet
 const uint32_t PACKET_HEADER_SIZE = 1;                    // 1 octet
@@ -92,13 +96,12 @@ const int8_t PUBLIC_KEY_PACKET       = 11;                // a PGP Public Key Bl
 
 // session packets
 const int8_t START_TALK_PACKET       = 12;                // ticket + authenticator
-const int8_t START_TALK_REPLY_PACKET = 13;                // encrypted response of yes or no
-const int8_t TALK_PACKET             = 14;                // encrypted data
-const int8_t END_TALK_PACKET         = 15;                // no payload (?)
+const int8_t START_TALK_REPLY_PACKET = 13;                // encrypted response of BLOCK_SIZE >> 3 octets of 0s or 1s
+const int8_t TALK_PACKET             = 14;                // encrypted data of 1 octet TALK_PACKET or END_TALK_PACKET, followed by message, if any
 
 // special packets
-const int8_t IP_PACKET               = 16;                // 4 octet ip address
-const int8_t INITIAL_SEND_PACKET     = 17;                // 4 octet packet count + 1 octet expected type
+const int8_t INITIAL_SEND_PACKET     = 15;                // 4 octet packet count + 1 octet expected type
+const int8_t END_TALK_PACKET         = 16;                // only a tag, not actual packet type
 
 // const int8_t _PACKET = ;
 
@@ -117,7 +120,7 @@ int nonblock_getline(std::string & str, const std::string & delim = "\n");
 // generate random octets
 std::string random_octets(const unsigned int count = 0);
 
-// parse IPv4 strings for the form A.B.C.D
+// parse IPv4 strings of the form A.B.C.D
 std::array <uint8_t, 4> parse_ip(const std::string & str);
 std::array <uint8_t, 4> parse_ip(char * buf);
 
@@ -136,3 +139,4 @@ int send_packets(int sock, const uint8_t & type, const std::string & data, const
 int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & data, const std::string & err = "Could not receive data" );
 
 // probably also want encrypted send/recv
+#endif

@@ -1,4 +1,5 @@
 **Fix OpenPGP encrypt/decrypt hash bug**
+**Make this stateless**
 hide user input when typing in password
 make crashing safer
 Make server stopping also force client (not client thread; that is already done) to stop
@@ -8,5 +9,4 @@ master key to decrypt KDC subkeys
 prevent too many login attempts on same account
 missing error message if server crashes before client stops
 add try/catch for things in OpenPGP that can throw
-do not decrypt user data that is in memory until it is necessary 
-    - encrypt (user name + shared key encrypted with kh + hash) with kdc master key
+OpenPGP CFB encrypt/decrypt is being weird

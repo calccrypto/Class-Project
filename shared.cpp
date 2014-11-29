@@ -309,18 +309,18 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
         data += packet;
     }
 
-    // if received bad data, return -1
-    if (!allowed){
-        std::cerr << "Error: Received unexpected packet type. Please ignore data." << std::endl;
-        return -1;
-    }
-
     // unblock socket
     if (nonblocking){
         if (unblock(sock) < 0){
             std::cerr << "Error: Could not make socket non-blocking." << std::endl;
             return -1;
         }
+    }
+
+    // if received bad data, return -1
+    if (!allowed){
+        std::cerr << "Error: Received unexpected packet type. Please ignore data." << std::endl;
+        return -1;
     }
 
     return 1;

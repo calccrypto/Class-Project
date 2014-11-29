@@ -1,52 +1,56 @@
 #include "user.h"
 
 User::User()
-    : /*uid(0),*/ timeskew(0), name(""), key(""){}
+    : sym(0), hash(0), salt(""), uid(""), key("")
+{}
 
 User::User(const User & u)
-    : /*uid(u.uid),*/ timeskew(u.timeskew), name(u.name), key(u.key) {
-}
+    : sym(u.sym), hash(u.hash), salt(u.salt), uid(u.uid), key(u.key)
+{}
 
 User::User(const std::string & formatted)
-    : User() {
-    // uid = toint(formatted.substr(0, 4), 256);
-    std::string f = "0000" + formatted;
-    timeskew = toint(f.substr(4, 8), 256);
-    size_t name_len = toint(f.substr(12, 4), 256);
-    name = f.substr(16, name_len);
-    size_t key_len = toint(f.substr(16 + name_len, 4), 256);
-    key = f.substr(20 + name_len, key_len);
+    : User()
+{
+    sym = formatted[0];
+    hash = formatted[1];
+    uint32_t DS = Hash_Length.at(Hash_Algorithms.at(hash)) >> 3;
+    salt = formatted.substr(2, DS);
+    uid = formatted.substr(2 + DS, DS);
+    uint32_t len = toint(formatted.substr(2 + DS + DS, 4), 256);
+    key = formatted.substr(2 + DS + DS + 4, len);
 }
 
-User::User(/*const uint32_t & UID,*/ const uint64_t & TIMESKEW, const std::string & NAME, const std::string KEY)
-    : /*uid(UID),*/ timeskew(TIMESKEW), name(NAME), key(KEY) {}
-
-// void User::set_uid(const uint32_t & UID){
-    // uid = UID;
-// }
-
-void User::set_timeskew(const uint64_t & TIMESKEW){
-    timeskew = TIMESKEW;
+void User::set_sym(const uint8_t & SYM){
+    sym = SYM;
 }
 
-void User::set_name(const std::string & NAME){
-    name = NAME;
+void User::set_hash(const uint8_t & HASH){
+    hash = HASH;
+}
+
+void User::set_uid(const std::string & SALT, const std::string & NAME){
+    salt = SALT;
+    uid = use_hash(hash, SALT + NAME);
 }
 
 void User::set_key(const std::string & KEY){
     key = KEY;
 }
 
-// unsigned int User::get_uid() const {
-    // return uid;
-// }
-
-uint64_t User::get_timeskew() const {
-    return timeskew;
+uint8_t User::get_sym() const {
+    return sym;
 }
 
-std::string User::get_name() const {
-    return name;
+uint8_t User::get_hash() const {
+    return hash;
+}
+
+std::string User::get_salt() const {
+    return salt;
+}
+
+std::string User::get_uid() const {
+    return uid;
 }
 
 std::string User::get_key() const {
@@ -54,19 +58,17 @@ std::string User::get_key() const {
 }
 
 User User::operator=(const User & u){
-    // uid = u.uid;
-    timeskew = u.timeskew;
-    name = u.name;
+    uid = u.uid;
     key = u.key;
     return *this;
 }
 
-bool User::operator==(const std::string & u) const {
-    return (name == u);
+bool User::operator==(const std::string & name) const {
+    return (uid == use_hash(hash, salt + name));
 }
 
 bool User::operator==(const User & u) const {
-    return (/*(uid == u.uid) &&*/ (name == u.name) && (key == u.key));
+    return (uid == u.uid);
 }
 
 bool User::operator!=(const User & u) const {
@@ -74,17 +76,11 @@ bool User::operator!=(const User & u) const {
 }
 
 bool User::operator<(const User & u) const {
-    if (name < u.name){
-        return true;
-    }
-    // else if (name == u.name){
-        // return (uid < u.uid);
-    // }
-    return false;
+    return uid < u.uid;
 }
 
 std::string User::str() const {
-    return /*unhexlify(makehex(uid, 8)) + */unhexlify(makehex(timeskew, 16)) + unhexlify(makehex(name.size(), 8)) + name + unhexlify(makehex(key.size(), 8)) + key;
+    return std::string(1, sym) + std::string(1, hash) + salt + uid + unhexlify(makehex(key.size(), 8)) + key;
 }
 
 std::ostream & operator<<(std::ostream & stream, const User & u){
