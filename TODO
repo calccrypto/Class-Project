@@ -10,3 +10,4 @@ prevent too many login attempts on same account
 missing error message if server crashes before client stops
 add try/catch for things in OpenPGP that can throw
 OpenPGP CFB encrypt/decrypt is being weird
+add authenticator to each message sent from client to client

@@ -58,16 +58,16 @@ const uint16_t DEFAULT_SERVER_PORT = 45678;               // Ephemeral port for 
 const uint16_t DEFAULT_TALK_PORT = 56789;                 // Ephemeral port for talking to another client
 const int32_t TIME_SKEW = 300;                            // seconds (5 minutes)
 
-typedef AES SYM;                                                                // default symmetric key algorithm for use without OpenPGP
-const uint8_t SYM_NUM = 9;                                                      // default symmetric key algorithm OpenPGP number for AES256
-const std::string SYM_NAME = Symmetric_Algorithms.at(SYM_NUM);                  // default symmetric key algorithm name
-const unsigned int KEY_SIZE = Symmetric_Algorithm_Key_Length.at(SYM_NAME);      // symmetric key algorithm key size (bits)
-const unsigned int BLOCK_SIZE = Symmetric_Algorithm_Block_Length.at(SYM_NAME);  // symmetric key algorithm block size (bits)
-typedef SHA256 HASH;                                                            // default hashing algorithm for use without OpenPGP
-const uint8_t HASH_NUM = 8;                                                     // default hashing algorithm OpenPGP number for SHA256
-const unsigned int DIGEST_SIZE = HASH().digestsize();                           // hashing algorithm output size (bits)
-const uint8_t COMPRESSION_ALGORITHM = 1;                                        // default compression algorithm: ZLIB
-const uint32_t RESYNC = 18;                                                     // OpenPGP packet tag 18 does not trigger resync
+typedef AES SYM;                                                                    // default symmetric key algorithm for use without OpenPGP
+const uint8_t SYM_NUM = 9;                                                          // default symmetric key algorithm OpenPGP number for AES256
+const std::string SYM_NAME = Symmetric_Algorithms.at(SYM_NUM);                      // default symmetric key algorithm name
+const unsigned int KEY_SIZE = Symmetric_Algorithm_Key_Length.at(SYM_NAME) >> 3;     // symmetric key algorithm key size (octest)
+const unsigned int BLOCK_SIZE = Symmetric_Algorithm_Block_Length.at(SYM_NAME) >> 3; // symmetric key algorithm block size (octets)
+typedef SHA256 HASH;                                                                // default hashing algorithm for use without OpenPGP
+const uint8_t HASH_NUM = 8;                                                         // default hashing algorithm OpenPGP number for SHA256
+const unsigned int DIGEST_SIZE = HASH().digestsize() >> 3;                          // hashing algorithm output size (octets)
+const uint8_t COMPRESSION_ALGORITHM = 1;                                            // default compression algorithm: ZLIB
+const uint32_t RESYNC = 18;                                                         // OpenPGP packet tag 18 does not trigger resync
 
 const uint32_t PACKET_SIZE = 128;                         // 256 octets per packet
 const uint32_t PACKET_HEADER_SIZE = 1;                    // 1 octet
@@ -91,7 +91,7 @@ const int8_t REQUEST_PACKET          = 7;                 // target name + TGT +
 // packets created after starting packets
 const int8_t LOGOUT_PACKET           = 8;                 // no payload (?)
 const int8_t REPLY_PACKET            = 9;                 // response to request packet
-const int8_t SYM_ENCRYPTED_PACKET    = 10;                // symmetrically encrypted data
+const int8_t PKA_ENCRYPTED_PACKET    = 10;                // symmetrically encrypted data
 const int8_t PUBLIC_KEY_PACKET       = 11;                // a PGP Public Key Block
 
 // session packets

@@ -150,17 +150,17 @@ int main(int argc, char * argv[]){
                     // decrypt ticket
                     uint32_t len = toint(packet.substr(1, 4), 256);
                     std::string ticket = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(5, len), *KA);
-                    ticket = ticket.substr(BLOCK_SIZE >> 3, ticket.size() - (BLOCK_SIZE >> 3));
+                    ticket = ticket.substr(BLOCK_SIZE, ticket.size() - BLOCK_SIZE);
 
                     // decrypt authenticator
                     len = toint(packet.substr(5 + len, 4), 256);
                     std::string auth = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(5, len), *KA);
-                    auth = auth.substr(BLOCK_SIZE >> 3, auth.size() - (BLOCK_SIZE >> 3));
+                    auth = auth.substr(BLOCK_SIZE, auth.size() - BLOCK_SIZE);
 
                     // parse ticket = name + KAB
                     len = toint(ticket.substr(0, 4), 256);
                     std::string requester = ticket.substr(4, len);
-                    KAB = new std::string(ticket.substr(4 + len, KEY_SIZE >> 3));
+                    KAB = new std::string(ticket.substr(4 + len, KEY_SIZE));
 
                     // parse authenticator = timestamp
                     len = toint(auth.substr(0, 4), 256);
@@ -186,7 +186,7 @@ int main(int argc, char * argv[]){
                     talking = (reply == "y");
                     target_name = new std::string(requester);
 
-                    if ((rc = send_packets(lsock, START_TALK_REPLY_PACKET, std::string(BLOCK_SIZE >> 3, talking * 0xff), "Could not send reply")) < 1){
+                    if ((rc = send_packets(lsock, START_TALK_REPLY_PACKET, std::string(BLOCK_SIZE, talking * 0xff), "Could not send reply")) < 1){
                         talking = false;
                         delete target_name; target_name = NULL;
                         continue;
@@ -215,7 +215,7 @@ int main(int argc, char * argv[]){
             else{
                 if (packet[0] == TALK_PACKET){  // if outer packet is a TALK_PACKET
                     packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *KAB);   // decrypt packet
-                    packet = packet.substr(BLOCK_SIZE >> 3, packet.size() - (BLOCK_SIZE >> 3));                     // remove prefix
+                    packet = packet.substr(BLOCK_SIZE, packet.size() - BLOCK_SIZE);                     // remove prefix
 
                     // no other packets should make it here
                     if (packet[0] == TALK_PACKET){              // display message
@@ -247,7 +247,7 @@ int main(int argc, char * argv[]){
         if ((in_rc = nonblock_getline(input)) == 1){
             std::stringstream s; s << input;
             if (s >> input){
-                if (username && SA && tgt){                                         // if has KCD credentials
+                if (username && SA && tgt){                                      // if has KCD credentials
                     if ((!KAB && !ticket) || (KAB && ticket && !talking)){       // if does not have target or not talking to target
                         if (input == "help"){
                             for(std::pair <std::string, std::string> const & help : CLIENT_LOGGED_IN_HELP){
@@ -278,7 +278,7 @@ int main(int argc, char * argv[]){
                                 std::cin >> target;
                             }
                             std::string auth = unhexlify(makehex(now(), 8));                // cleartext timestamp
-                            auth = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, auth, *SA, random_octets(BLOCK_SIZE >> 3));
+                            auth = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, auth, *SA, random_octets(BLOCK_SIZE));
                             packet = unhexlify(makehex(target.size(), 8)) + target +        // target name
                                      unhexlify(makehex(tgt -> size(), 8)) + *tgt +          // TGT
                                      unhexlify(makehex(packet.size(), 8)) + auth;           // authenticator (encrypted with SA)
@@ -296,7 +296,7 @@ int main(int argc, char * argv[]){
 
                                 // decrypt reply
                                 packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *SA);
-                                packet = packet.substr(BLOCK_SIZE >> 3, packet.size() - (BLOCK_SIZE >> 3));
+                                packet = packet.substr(BLOCK_SIZE, packet.size() - BLOCK_SIZE);
 
                                 // check target's name
                                 uint32_t target_len = toint(packet.substr(0, 4), 256);
@@ -305,11 +305,11 @@ int main(int argc, char * argv[]){
                                 }
                                 else{
                                     // get KAB
-                                    KAB = new std::string(packet.substr(4 + target_len, KEY_SIZE >> 3));
+                                    KAB = new std::string(packet.substr(4 + target_len, KEY_SIZE));
                                     // get ticket length
-                                    uint32_t ticket_len = toint(packet.substr(4 + target_len + (KEY_SIZE >> 3), 4));
+                                    uint32_t ticket_len = toint(packet.substr(4 + target_len + KEY_SIZE, 4));
                                     // get ticket
-                                    ticket = new std::string(packet.substr(4 + target_len + (KEY_SIZE >> 3) + 4, ticket_len));
+                                    ticket = new std::string(packet.substr(4 + target_len + KEY_SIZE + 4, ticket_len));
                                 }
                             }
                             else if (packet[0] == FAIL_PACKET){
@@ -331,7 +331,7 @@ int main(int argc, char * argv[]){
                                 }
                                 else{
                                     // send initial packet
-                                    std::string auth = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, unhexlify(makehex(now(), 8)), *KAB, random_octets(BLOCK_SIZE >> 3));
+                                    std::string auth = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, unhexlify(makehex(now(), 8)), *KAB, random_octets(BLOCK_SIZE));
                                     packet = unhexlify(makehex(ticket -> size(), 8)) + *ticket + unhexlify(makehex(auth.size(), 8)) + auth;
                                     if ((rc = send_packets(lsock, START_TALK_PACKET, packet, "Could not start session.")) < 1){
                                         continue;
@@ -348,8 +348,8 @@ int main(int argc, char * argv[]){
                                         if (packet[0] == START_TALK_REPLY_PACKET){
                                             // decrypt packet
                                             std::string reply = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *KAB);
-                                            reply = reply.substr(BLOCK_SIZE >> 3, reply.size() - (BLOCK_SIZE >> 3));
-                                            talking = (reply == std::string(BLOCK_SIZE >> 3, 0xff));
+                                            reply = reply.substr(BLOCK_SIZE, reply.size() - BLOCK_SIZE);
+                                            talking = (reply == std::string(BLOCK_SIZE, 0xff));
                                         }
                                         // else{
                                             // // should never reach here
@@ -408,6 +408,8 @@ int main(int argc, char * argv[]){
                                 }
                             }
                         }
+                        else{
+                        }
                     }
                     else{
                         std::cerr << "Warning: Do not have both KAB and ticket. Erasing." << std::endl;
@@ -458,10 +460,10 @@ int main(int argc, char * argv[]){
                         if (packet[0] == CREDENTIALS_PACKET){
                             packet = packet.substr(1, packet.size() - 1);                                           // extract data from packet
                             packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet, KA);                          // decrypt data
-                            packet = packet.substr(BLOCK_SIZE >> 3, packet.size() - (BLOCK_SIZE >> 3));             // remove prefix
-                            SA = new std::string(packet.substr(0, KEY_SIZE >> 3));                                  // get key
-                            uint32_t tgt_len = toint(packet.substr(KEY_SIZE >> 3, 4), 256);                         // get TGT size
-                            tgt = new std::string(packet.substr((KEY_SIZE >> 3) + 4, tgt_len));                     // store TGT
+                            packet = packet.substr(BLOCK_SIZE, packet.size() - BLOCK_SIZE);             // remove prefix
+                            SA = new std::string(packet.substr(0, KEY_SIZE));                           // get key
+                            uint32_t tgt_len = toint(packet.substr(KEY_SIZE, 4), 256);                  // get TGT size
+                            tgt = new std::string(packet.substr(KEY_SIZE + 4, tgt_len));                // store TGT
                             // sort of authenticated at this point
                             std::cout << "Welcome, " << *username << "!" << std::endl;
 
@@ -498,56 +500,55 @@ int main(int argc, char * argv[]){
                         std::cout << "New account password: ";
                         std::cin >> new_password;   // should hide input
 
-                        // confirm password
-                        std::cout << "Please re-enter password: ";
-                        std::cin >> confirm;        // should hide input
+                        // // confirm password
+                        // std::cout << "Please re-enter password: ";
+                        // std::cin >> confirm;        // should hide input
 
-                        if (new_password != confirm){
-                            std::cerr << "Error: Passwords do not match" << std::endl;
-                            continue;
-                        }
+                        // if (new_password != confirm){
+                            // std::cerr << "Error: Passwords do not match" << std::endl;
+                            // continue;
+                        // }
 
                         // send request to KDC
-                        packet = "";
-                        if ((rc = send_packets(sock, CREATE_ACCOUNT_PACKET, packet, "Could not send request for new account.")) < 1){
+                        if ((rc = send_packets(sock, CREATE_ACCOUNT_PACKET, "", "Could not send request for new account.")) < 1){
                             continue;
                         }
 
                         // receive failure message or public key
-                        PGPPublicKey pub;
-                        if ((rc = recv_packets(sock, {QUIT_PACKET, FAIL_PACKET, PUBLIC_KEY_PACKET}, packet, "Could not receive next packet.")) < 1){
-                            continue;
-                        }
-                        if (packet[0] == PUBLIC_KEY_PACKET){
-                            packet = packet.substr(1, packet.size());
-                            pub.read(packet);
-                        }
-                        else if (packet[0] == FAIL_PACKET){
-                            std::cerr << packet.substr(1, packet.size() - 1) << std::endl;
-                            continue;
-                        }
-                        else if (packet[0] == QUIT_PACKET){
-                            quit = true;
-                            continue;
-                        }
+                        // PGPPublicKey pub;
+                        // if ((rc = recv_packets(sock, {QUIT_PACKET, FAIL_PACKET, PUBLIC_KEY_PACKET}, packet, "Could not receive next packet.")) < 1){
+                            // continue;
+                        // }
+                        // if (packet[0] == PUBLIC_KEY_PACKET){
+                            // packet = packet.substr(1, packet.size());
+                            // pub.read(packet);
+                        // }
+                        // else if (packet[0] == FAIL_PACKET){
+                            // std::cerr << packet.substr(1, packet.size() - 1) << std::endl;
+                            // continue;
+                        // }
+                        // else if (packet[0] == QUIT_PACKET){
+                            // quit = true;
+                            // continue;
+                        // }
 
-                        if (verify_key(pub, pub)){  // public key was signed by attached signature packet
+                        // if (verify_key(pub, pub)){  // public key was signed by attached signature packet
                             /* need to check if public key came from expected user */
 
-                            packet = unhexlify(makehex(new_username.size(), 8)) + new_username +  HASH(new_password).digest();
+                            packet = unhexlify(makehex(new_username.size(), 8)) + new_username + HASH(new_password).digest();
 
                             // encrypt with PGP
-                            packet = encrypt_pka(pub, packet, "", SYM_NUM, COMPRESSION_ALGORITHM, true).write();
+                            // packet = encrypt_pka(pub, packet, "", SYM_NUM, COMPRESSION_ALGORITHM, true).write();
 
-                            if ((rc = send_packets(sock, SYM_ENCRYPTED_PACKET, packet, "Could not send request for new account.")) < 1){
+                            if ((rc = send_packets(sock, PKA_ENCRYPTED_PACKET, packet, "Could not send request for new account.")) < 1){
                                 continue;
                             }
-                        }
-                        else{                   // public key is bad
-                            std::cout << "Error: Received bad public key." << std::endl;
-                            if ((rc = send_packets(sock, FAIL_PACKET, "Error: Received bad public key", "Could not send request for new account.")) < 1){}
-                            continue;
-                        }
+                        // }
+                        // else{                   // public key is bad
+                            // std::cout << "Error: Received bad public key." << std::endl;
+                            // if ((rc = send_packets(sock, FAIL_PACKET, "Error: Received bad public key", "Could not send request for new account.")) < 1){}
+                            // continue;
+                        // }
 
                         if ((rc = recv_packets(sock, {QUIT_PACKET, FAIL_PACKET, SUCCESS_PACKET}, packet, "Could not receive response packet.")) < 1){
                             continue;
