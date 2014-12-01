@@ -58,18 +58,20 @@ const uint16_t DEFAULT_SERVER_PORT = 45678;               // Ephemeral port for 
 const uint16_t DEFAULT_TALK_PORT = 56789;                 // Ephemeral port for talking to another client
 const int32_t TIME_SKEW = 300;                            // seconds (5 minutes)
 
-typedef AES SYM;                                                                    // default symmetric key algorithm for use without OpenPGP
+// AES 256
 const uint8_t SYM_NUM = 9;                                                          // default symmetric key algorithm OpenPGP number for AES256
 const std::string SYM_NAME = Symmetric_Algorithms.at(SYM_NUM);                      // default symmetric key algorithm name
 const unsigned int KEY_SIZE = Symmetric_Algorithm_Key_Length.at(SYM_NAME) >> 3;     // symmetric key algorithm key size (octest)
 const unsigned int BLOCK_SIZE = Symmetric_Algorithm_Block_Length.at(SYM_NAME) >> 3; // symmetric key algorithm block size (octets)
-typedef SHA256 HASH;                                                                // default hashing algorithm for use without OpenPGP
-const uint8_t HASH_NUM = 8;                                                         // default hashing algorithm OpenPGP number for SHA256
-const unsigned int DIGEST_SIZE = HASH().digestsize() >> 3;                          // hashing algorithm output size (octets)
-const uint8_t COMPRESSION_ALGORITHM = 1;                                            // default compression algorithm: ZLIB
-const uint32_t RESYNC = 18;                                                         // OpenPGP packet tag 18 does not trigger resync
 
-const uint32_t PACKET_SIZE = 128;                         // 256 octets per packet
+// SHA256
+const uint8_t HASH_NUM = 8;                                                         // default hashing algorithm OpenPGP number for SHA256
+const std::string HASH_NAME = Hash_Algorithms.at(HASH_NUM);                         // default hash algorithm name
+const unsigned int DIGEST_SIZE = Hash_Length.at(HASH_NAME) >> 3;                    // hashing algorithm output size (octets)
+const uint8_t COMPRESSION_ALGORITHM = 1;                                            // default compression algorithm: ZLIB
+const uint32_t RESYNC = 9;                                                          // OpenPGP packet tag 18 does not trigger resync
+
+const uint32_t PACKET_SIZE = 128;                         // 128 octets per packet
 const uint32_t PACKET_HEADER_SIZE = 1;                    // 1 octet
 const uint32_t PACKET_SIZE_INDICATOR = 4;                 // 4 octets
 const uint32_t DATA_MAX_SIZE = PACKET_SIZE                // max size of payload in octets
@@ -130,7 +132,7 @@ std::array <uint8_t, 4> parse_ip(char * buf);
 bool packetize(const uint8_t & type, std::string & packet);
 
 // Takes packetized data and writes packet type + data into variable packet
-bool unpacketize(std::string & packet);
+bool unpacketize(const uint8_t & type, std::string & packet);
 
 // pack and send multiple packets worth of data
 int send_packets(int sock, const uint8_t & type, const std::string & data, const std::string & err = "Could not send data");

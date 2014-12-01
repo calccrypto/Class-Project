@@ -45,14 +45,14 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include "user.h"
 
 // move these to configuration file or something/////////
-const std::string secret_key = HASH("SUPER SECRET KEY").digest();
+const std::string secret_key = use_hash(HASH_NUM, "SUPER SECRET KEY");
 const std::string public_key_file = "testKDCpublic";
 const std::string private_key_file = "testKDCprivate";
 const std::string pki_key = "KDC";
 const std::string users_file = "user";
-const std::string users_file_key = HASH("USERS FILE KEY").digest();
-const std::string users_account_key = HASH("USERS ACCOUNT KEY").digest();
-const std::string tgt_key = HASH("TGT KEY").digest();
+const std::string users_file_key = use_hash(HASH_NUM, "USERS FILE KEY");
+const std::string users_account_key = use_hash(HASH_NUM, "USERS ACCOUNT KEY");
+const std::string tgt_key = use_hash(HASH_NUM, "TGT KEY");
 // //////////////////////////////////////////////////////
 
 // stuff the user sees
@@ -82,7 +82,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
         }
 
         // parse input
-        if (client){                                    // if identity is established
+        if (client){                                         // if identity is established
             if (packet[0] == LOGOUT_PACKET){
                 delete client; client = NULL;
             }
@@ -108,20 +108,20 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 len = toint(packet.substr(5 + target_username.size(), 4), 256);                     // TGT length
                 std::string tgt = packet.substr(9 + target_username.size(), len);                   // TGT
                 tgt = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, tgt, tgt_key);                       // decrypt TGT
-                tgt = tgt.substr(BLOCK_SIZE, tgt.size() - BLOCK_SIZE);                  // remove prefix
+                tgt = tgt.substr(BLOCK_SIZE + 2, tgt.size() - BLOCK_SIZE - 2);                      // remove prefix
 
                 // parse TGT
                 len = toint(tgt.substr(0, 4), 256);
                 std::string username = tgt.substr(4, len);                                          // get initiator's username
-                std::string SA = tgt.substr(4 + len, KEY_SIZE);                                // get SA
+                std::string SA = tgt.substr(4 + len, KEY_SIZE);                                     // get SA
 
                 // get authenticator
-                len = toint(packet.substr(9 + target_username.size() + tgt.size(), 4), 256);      // authenticator length
+                len = toint(packet.substr(9 + target_username.size() + tgt.size(), 4), 256);        // authenticator length
                 std::string auth = packet.substr(13 + target_username.size() + tgt.size(), len);    // authenticator
 
                 // check authenticator timestamp
                 auth = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, auth, SA);                          // decrypt authenticator
-                auth = auth.substr(BLOCK_SIZE, auth.size() - BLOCK_SIZE);               // remove prefix
+                auth = auth.substr(BLOCK_SIZE + 2, auth.size() - BLOCK_SIZE - 2);                   // remove prefix
 
                 if (auth.size() != 4){
                     if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Bad timestamp size.")) < 1){}
@@ -204,14 +204,15 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                     std::string tgt = unhexlify(makehex(username.size(), 8)) + username + SA;
                     tgt = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, tgt, tgt_key, random_octets(BLOCK_SIZE));
 
-                    // E(SA, TGT) with KA
+                    // (SA, TGT)
                     packet = SA + unhexlify(makehex(tgt.size(), 8)) + tgt;
 
                     // decrypt KA
                     std::string KA = use_OpenPGP_CFB_decrypt(client -> get_sym(), RESYNC, client -> get_key(), users_account_key);
-                    KA = KA.substr(BLOCK_SIZE, KA.size() - BLOCK_SIZE);                           // remove prefix
-                    KA = KA.substr(DIGEST_SIZE, KA.size() - DIGEST_SIZE);                                   // remove garbage octets
-                    packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, KA, random_octets(BLOCK_SIZE));      // encrypt session key with user's shared key
+                    KA = KA.substr(BLOCK_SIZE + 2, KA.size() - BLOCK_SIZE - 2);    // remove prefix
+
+                    // send KA salt with E(SA, TGT) with KA
+                    packet = client -> get_key_salt() + use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, KA, random_octets(BLOCK_SIZE));
 
                     if ((rc = send_packets(args -> get_sock(), CREDENTIALS_PACKET, packet, "Could not send session key and TGT.")) < 1){
                         continue;
@@ -278,27 +279,28 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                         continue;
                     }
 
-                    // generate and encrypt shared key
-                    std::string KA = random_octets(DIGEST_SIZE) + data.substr(4 + len, DIGEST_SIZE);
-                    KA = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, KA, users_account_key, random_octets(BLOCK_SIZE));
+                    // extract salt and shared key
+                    std::string KA_salt = data.substr(4 + len, DIGEST_SIZE);
+                    std::string KA = data.substr(4 + len + DIGEST_SIZE, KEY_SIZE);
 
                     // create new user
                     User new_user;
                     new_user.set_sym(SYM_NUM);
                     new_user.set_hash(HASH_NUM);
                     new_user.set_uid(random_octets(DIGEST_SIZE), new_username);
-                    new_user.set_key(KA);
+                    // encrypt shared key with KDC key
+                    new_user.set_key(KA_salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, KA, users_account_key, random_octets(BLOCK_SIZE)));
 
                     // add new user to database (in memory)
                     mutex.lock();
                     args -> get_users() -> insert(new_user);
-                    std::cout << "Added new user: " << new_username << "." << std::endl;
+                    std::cout << "Added new user: " << new_username << std::endl;
                     mutex.unlock();
 
                     std::cout << "Sending success packet" << std::endl;
 
                     // send success packet
-                    if ((rc = send_packets(args -> get_sock(), SUCCESS_PACKET, "")) < 1){
+                    if ((rc = send_packets(args -> get_sock(), SUCCESS_PACKET, "", "Could not send account creation success packet")) < 1){
                         continue;
                     }
                 }
@@ -347,10 +349,10 @@ bool save_users(std::mutex & mutex, std::ofstream & save, const std::set <User> 
     // database file format:
     //
     // cleartext = (for all users
-    //   4 octets - N = user data length
-    //   N octets - user data
-    //   DIGEST_SIZE octets hash of current user data
-    // )
+    //                  4 octets - N = user data length
+    //                  N octets - user data
+    //                  DIGEST_SIZE octets - hash of current user data
+    //              )
     //
     // Encrypt with users_file_key(cleartext + hash(cleartext))
     //
@@ -359,10 +361,10 @@ bool save_users(std::mutex & mutex, std::ofstream & save, const std::set <User> 
     for(User const & u : users){
         std::string user = u.str();
         user = unhexlify(makehex(user.size(), 8)) + user;
-        users_str += user + HASH(user).digest();
+        users_str += user + use_hash(HASH_NUM, user);
     }
 
-    users_str += HASH(users_str).digest();
+    users_str += use_hash(HASH_NUM, users_str);
 
     // encrypt data
     users_str = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, users_str, key, random_octets(BLOCK_SIZE));
@@ -405,11 +407,11 @@ int read_users(std::mutex & mutex, std::ifstream & save, std::set <User> & users
     users_str = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, users_str, key);
 
     // remove CFB padding
-    users_str = users_str.substr(BLOCK_SIZE, users_str.size() - BLOCK_SIZE);
+    users_str = users_str.substr(BLOCK_SIZE + 2, users_str.size() - BLOCK_SIZE - 2);
 
     uint32_t DS = DIGEST_SIZE;
 
-    if (HASH(users_str.substr(0, users_str.size() - DS)).digest() != users_str.substr(users_str.size() - DS, DS)){
+    if (use_hash(HASH_NUM, users_str.substr(0, users_str.size() - DS)) != users_str.substr(users_str.size() - DS, DS)){
         std::cerr << "Error: File checksum does not match" << std::endl;
         return -2;          // bad file
     }
@@ -421,7 +423,7 @@ int read_users(std::mutex & mutex, std::ifstream & save, std::set <User> & users
     while (i < users_str.size()){
         uint32_t N = toint(users_str.substr(i, 4), 256);
         // if record matches, save it
-        if (HASH(users_str.substr(i, N + 4)).digest() == users_str.substr(i + 4 + N, DS)){
+        if (use_hash(HASH_NUM, users_str.substr(i, N + 4)) == users_str.substr(i + 4 + N, DS)){
             users.insert(User(users_str.substr(i + 4, N)));
         }
         else{
@@ -558,7 +560,9 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
                             u.set_sym(SYM_NUM);
                             u.set_hash(HASH_NUM);
                             u.set_uid(random_octets(DIGEST_SIZE), new_username);
-                            u.set_key(use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, /*random_octets(DIGEST_SIZE) + */HASH(password).digest(), users_account_key, random_octets(BLOCK_SIZE)));
+                            std::string salt = random_octets(DIGEST_SIZE);
+                            std::cout << hexlify(use_hash(HASH_NUM, salt + password)) << std::endl;
+                            u.set_key(salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, use_hash(HASH_NUM, salt + password), users_account_key, random_octets(DIGEST_SIZE)));
                             users.insert(u);
                             mutex.unlock();
                         }
@@ -606,7 +610,6 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
 
 int main(int argc, char * argv[]){
     BBS(static_cast <PGPMPI> (static_cast <unsigned int> (now())));
-
     uint16_t port = DEFAULT_SERVER_PORT;        // port to listen on
 
     if (argc == 1);                             // no input port

@@ -150,12 +150,12 @@ int main(int argc, char * argv[]){
                     // decrypt ticket
                     uint32_t len = toint(packet.substr(1, 4), 256);
                     std::string ticket = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(5, len), *KA);
-                    ticket = ticket.substr(BLOCK_SIZE, ticket.size() - BLOCK_SIZE);
+                    ticket = ticket.substr(BLOCK_SIZE + 2, ticket.size() - BLOCK_SIZE - 2);
 
                     // decrypt authenticator
                     len = toint(packet.substr(5 + len, 4), 256);
                     std::string auth = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(5, len), *KA);
-                    auth = auth.substr(BLOCK_SIZE, auth.size() - BLOCK_SIZE);
+                    auth = auth.substr(BLOCK_SIZE + 2, auth.size() - BLOCK_SIZE - 2);
 
                     // parse ticket = name + KAB
                     len = toint(ticket.substr(0, 4), 256);
@@ -215,7 +215,7 @@ int main(int argc, char * argv[]){
             else{
                 if (packet[0] == TALK_PACKET){  // if outer packet is a TALK_PACKET
                     packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *KAB);   // decrypt packet
-                    packet = packet.substr(BLOCK_SIZE, packet.size() - BLOCK_SIZE);                     // remove prefix
+                    packet = packet.substr(BLOCK_SIZE + 2, packet.size() - BLOCK_SIZE - 2);                     // remove prefix
 
                     // no other packets should make it here
                     if (packet[0] == TALK_PACKET){              // display message
@@ -296,7 +296,7 @@ int main(int argc, char * argv[]){
 
                                 // decrypt reply
                                 packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *SA);
-                                packet = packet.substr(BLOCK_SIZE, packet.size() - BLOCK_SIZE);
+                                packet = packet.substr(BLOCK_SIZE + 2, packet.size() - BLOCK_SIZE - 2);
 
                                 // check target's name
                                 uint32_t target_len = toint(packet.substr(0, 4), 256);
@@ -348,7 +348,7 @@ int main(int argc, char * argv[]){
                                         if (packet[0] == START_TALK_REPLY_PACKET){
                                             // decrypt packet
                                             std::string reply = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *KAB);
-                                            reply = reply.substr(BLOCK_SIZE, reply.size() - BLOCK_SIZE);
+                                            reply = reply.substr(BLOCK_SIZE + 2, reply.size() - BLOCK_SIZE - 2);
                                             talking = (reply == std::string(BLOCK_SIZE, 0xff));
                                         }
                                         // else{
@@ -439,12 +439,10 @@ int main(int argc, char * argv[]){
                         std::cout << "Password: ";
                         std::cin >> password;   // should hide input
 
-                        // client transforms password into key
-                        std::string KA = HASH(password).digest();
-
                         std::cout << "Sending login packet" << std::endl;
                         // send login request
                         packet = unhexlify(makehex(username -> size(), 8)) + *username;
+
                         if ((rc = send_packets(sock, LOGIN_PACKET, packet, "Request for TGT Failed.")) < 1){
                             delete username; username = NULL;
                             input = "";
@@ -457,13 +455,28 @@ int main(int argc, char * argv[]){
                             input = "";
                             continue;
                         }
+
+                        std::cout << "processing" << std::endl;
+
                         if (packet[0] == CREDENTIALS_PACKET){
-                            packet = packet.substr(1, packet.size() - 1);                                           // extract data from packet
-                            packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet, KA);                          // decrypt data
-                            packet = packet.substr(BLOCK_SIZE, packet.size() - BLOCK_SIZE);             // remove prefix
-                            SA = new std::string(packet.substr(0, KEY_SIZE));                           // get key
-                            uint32_t tgt_len = toint(packet.substr(KEY_SIZE, 4), 256);                  // get TGT size
-                            tgt = new std::string(packet.substr(KEY_SIZE + 4, tgt_len));                // store TGT
+                            std::cout << "Received credentials" << std::endl;
+                            // client transforms password into key
+                            std::string KA = use_hash(HASH_NUM, packet.substr(1, DIGEST_SIZE) + password);
+
+                            // remove KA salt
+                            packet = packet.substr(1 + DIGEST_SIZE, packet.size() - DIGEST_SIZE - 1);
+
+                            std::cout << hexlify(packet) << std::endl;
+
+                            // decrypt rest of data
+                            packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet, KA);
+                            std::cout << "decrypted credentials" << std::endl;
+                            packet = packet.substr(BLOCK_SIZE + 2, packet.size() - BLOCK_SIZE - 2);  // remove prefix
+
+                            SA = new std::string(packet.substr(0, KEY_SIZE));                        // get session key
+                            uint32_t tgt_len = toint(packet.substr(KEY_SIZE, 4), 256);               // get TGT size
+                            tgt = new std::string(packet.substr(KEY_SIZE + 4, tgt_len));             // store TGT
+
                             // sort of authenticated at this point
                             std::cout << "Welcome, " << *username << "!" << std::endl;
 
@@ -535,7 +548,8 @@ int main(int argc, char * argv[]){
                         // if (verify_key(pub, pub)){  // public key was signed by attached signature packet
                             /* need to check if public key came from expected user */
 
-                            packet = unhexlify(makehex(new_username.size(), 8)) + new_username + HASH(new_password).digest();
+                            std::string salt = random_octets(DIGEST_SIZE);      // KA salt
+                            packet = unhexlify(makehex(new_username.size(), 8)) + new_username + salt + use_hash(HASH_NUM, salt + new_password);
 
                             // encrypt with PGP
                             // packet = encrypt_pka(pub, packet, "", SYM_NUM, COMPRESSION_ALGORITHM, true).write();

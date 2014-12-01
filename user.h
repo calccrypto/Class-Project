@@ -37,22 +37,24 @@ Header file for User class of Kerberos project
 class User {
     private:
         uint8_t sym;            // symmetric key algorithm
-        uint8_t hash;           // hash algorithm   (implies size of fields)    (plaintext)
-        std::string salt;       // random octets                                (plaintext)
-        std::string uid;        // some unique identifier                       (plaintext)
-        std::string key;        // key shared between user and KDC              (ciphertext)
+        uint8_t hash;           // hash algorithm   (implies size of fields)
+        std::string uid_salt;   // salt for the uid
+        std::string uid;        // some unique identifier
+
+        std::string key_salt;   // salt for the key
+        std::string key;        // key shared between user and KDC
 
         /*
             Formatted string:
                 1 octet: symmetric key algorithm number
                 1 octet: hash number
-                DS octets: salt
-                DS octets: uid                                    (hash of salt and username)
-                4 octets: encrypted key length
-                encrypted with KDC key:
-                    DS octets random data
-                    DS octets: key
-                    DS octets: hash of encrypted data
+                DS octets: uid_salt
+                DS octets: uid (hash of uid_salt and username)
+                DS octets: key_salt
+                4 octets: N = length of encrypted key
+                N octets: key (hash of key_salt and key)
+
+                (could add some random data to make each cleartext length different)
         */
 
     public:
@@ -65,14 +67,15 @@ class User {
         void set_sym(const uint8_t & SYM);
         void set_hash(const uint8_t & HASH);
         void set_uid(const std::string & SALT, const std::string & NAME);
-        void set_key(const std::string & KEY);
+        void set_key(const std::string & SALT, const std::string & ENCRYPTED_KEY);
 
         // Accessors
         uint8_t get_sym() const;
         uint8_t get_hash() const;
-        std::string get_salt() const;
+        std::string get_uid_salt() const;
         std::string get_uid() const;
-        std::string get_key() const;   // encrypted
+        std::string get_key_salt() const;   // cleartext
+        std::string get_key() const;        // ciphertext
 
         // Operators
         User operator=(const User & u);
@@ -82,7 +85,7 @@ class User {
         bool operator<(const User & u) const;
 
         // Miscellaneous
-        std::string str() const;        // returns formatted string
+        std::string str() const;            // returns formatted string
 };
 
 std::ostream & operator<<(std::ostream & stream, const User & u);

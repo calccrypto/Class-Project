@@ -94,13 +94,11 @@ int nonblock_getline(std::string & str, const std::string & delim){
 }
 
 std::string random_octets(const unsigned int count){
-    std::string out = "";
-    while (out.size() < count){
-        unsigned char c = 0;
+    std::string out(count, 0);
+    for(char & c : out){
         for(uint8_t x = 0; x < 8; x++){
             c = (c << 1) | (BBS().rand(1) == "1");
         }
-        out += std::string(1, c);
     }
     return out;
 }
@@ -128,12 +126,11 @@ bool packetize(const uint8_t & type, std::string & packet){
         std::cerr << "Error: Data too long to pack." << std::endl;
         return false;
     }
-    packet = unhexlify(makehex(packet.size() + 1, 8)) + std::string(1, type) + packet;
-    packet = (packet + random_octets(PACKET_SIZE)).substr(0, PACKET_SIZE);
+    packet = (unhexlify(makehex(packet.size() + 1, 8)) + std::string(1, type) + packet + random_octets(PACKET_SIZE)).substr(0, PACKET_SIZE);
     return true;
 }
 
-bool unpacketize(std::string & packet){
+bool unpacketize(const uint8_t & type, std::string & packet){
     if (packet.size() != PACKET_SIZE){
         std::cerr << "Error: Packet is the wrong length." << std::endl;
         return false;
@@ -143,7 +140,11 @@ bool unpacketize(std::string & packet){
         std::cerr << "Error: Given length is too long." << std::endl;
         return false;
     }
-    packet = packet.substr(PACKET_SIZE_INDICATOR, length);
+    if (packet[PACKET_SIZE_INDICATOR] != type){
+        std::cerr << "Error: Received packet is not the expected type" << std::endl;
+        return false;
+    }
+    packet = packet.substr(PACKET_SIZE_INDICATOR + 1, length - 1);
     return true;
 }
 
@@ -169,7 +170,7 @@ int send_packets(int sock, const uint8_t & type, const std::string & data, const
 
     // pack data (should never fail)
     if (!packetize(INITIAL_SEND_PACKET, packet)){
-        return -2;
+        return -1;
     }
 
     // keep sending data until it is completed
@@ -186,12 +187,12 @@ int send_packets(int sock, const uint8_t & type, const std::string & data, const
     }
 
     // for each chunk of data
-    for(uint32_t p = 0; p < packet_count; p++){
-        packet = data.substr(p * DATA_MAX_SIZE, DATA_MAX_SIZE);
+    for(uint32_t p = 0; p < data.size(); p += DATA_MAX_SIZE){
+        packet = data.substr(p, DATA_MAX_SIZE);
 
         // pack data (should never fail)
         if (!packetize(type, packet)){
-            return -2;
+            return -1;
         }
 
         i = 0;
@@ -251,7 +252,7 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
     // wait for all data
     while (packet.size() < PACKET_SIZE){
         memset(buf, 0, sizeof(char) * PACKET_SIZE); // zero out buffer
-        if ((rc = recv(sock, buf, PACKET_SIZE, 0)) < 1){
+        if ((rc = recv(sock, buf, PACKET_SIZE - packet.size(), 0)) < 1){
             if (!nonblocking){
                 if (rc == -1){
                     std::cerr << "Error: Could not receive initial packet." << std::endl;
@@ -263,17 +264,17 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
     }
 
     // unpack data (should never fail)
-    if (!unpacketize(packet)){
+    if (!unpacketize(INITIAL_SEND_PACKET, packet)){
         return -1;
     }
 
-    if (packet[0] != INITIAL_SEND_PACKET){
-        std::cerr << "Error: First packet is not initial send packet." << std::endl;
-        return -1;
-    }
+    // if (packet[0] != INITIAL_SEND_PACKET){
+        // std::cerr << "Error: First packet is not initial send packet." << std::endl;
+        // return -1;
+    // }
 
-    const uint32_t packet_count = toint(packet.substr(1, 4), 256);      // get number of packets that follow
-    const uint8_t expected_type = packet[5];                            // get expected type
+    const uint32_t packet_count = toint(packet.substr(0, 4), 256);      // get number of packets that follow
+    const uint8_t expected_type = packet[4];                            // get expected type
 
     // check expected type
     bool allowed = false;
@@ -284,7 +285,7 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
         }
     }
 
-    data = "";
+    data = std::string(1, expected_type);
 
     // for each chunk of data
     for(uint32_t p = 0; p < packet_count; p++){
@@ -292,7 +293,7 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
         packet = "";
         while (packet.size() < PACKET_SIZE){
             memset(buf, 0, sizeof(char) * PACKET_SIZE); // zero out buffer
-            if ((rc = recv(sock, buf, PACKET_SIZE, 0)) < 1){
+            if ((rc = recv(sock, buf, PACKET_SIZE - packet.size(), 0)) < 1){
                 if (rc == -1){
                     std::cerr << "Error: " << err << std::endl;
                 }
@@ -302,8 +303,8 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
         }
 
         // unpack data (should never fail)
-        if (!unpacketize(packet)){
-            return -2;
+        if (!unpacketize(expected_type, packet)){
+            return -1;
         }
 
         data += packet;
