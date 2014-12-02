@@ -165,8 +165,6 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             std::string username = packet.substr(5, len);
             args -> set_name(username);
 
-            std::cout << "Received request to log in for user: " << username << std::endl;
-
             User * client = nullptr;
             // search database for user
             for(User const & u : *(args -> get_users())){
@@ -207,8 +205,8 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             delete client; client = nullptr;
         }
         else if (packet[0] == REQUEST_PACKET){                                                  // client wants to talk to someone
-            uint32_t len = toint(packet.substr(1, 4), 256);
-            std::string target_username = packet.substr(5, len);
+            uint32_t target_len = toint(packet.substr(1, 4), 256);
+            std::string target_username = packet.substr(5, target_len);
 
             // check that target exists
             User * target = nullptr;
@@ -225,23 +223,23 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             }
 
             // get TGT
-            len = toint(packet.substr(5 + target_username.size(), 4), 256);                     // TGT length
-            std::string tgt = packet.substr(9 + target_username.size(), len);                   // TGT
-            tgt = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, tgt, tgt_key);                       // decrypt TGT
-            tgt = tgt.substr(BLOCK_SIZE + 2, tgt.size() - BLOCK_SIZE - 2);                      // remove prefix
+            uint32_t tgt_len = toint(packet.substr(5 + target_username.size(), 4), 256);            // TGT length
+            std::string tgt = packet.substr(9 + target_username.size(), tgt_len);                   // TGT
+            tgt = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, tgt, tgt_key);                           // decrypt TGT
+            tgt = tgt.substr(BLOCK_SIZE + 2, tgt.size() - BLOCK_SIZE - 2);                          // remove prefix
 
             // parse TGT
-            len = toint(tgt.substr(0, 4), 256);
-            std::string username = tgt.substr(4, len);                                          // get initiator's username
-            std::string SA = tgt.substr(4 + len, KEY_SIZE);                                     // get SA
+            uint32_t init_len = toint(tgt.substr(0, 4), 256);
+            std::string username = tgt.substr(4, init_len);                                         // get initiator's username
+            std::string SA = tgt.substr(4 + init_len, KEY_SIZE);                                    // get SA
 
             // get authenticator
-            len = toint(packet.substr(9 + target_username.size() + tgt.size(), 4), 256);        // authenticator length
-            std::string auth = packet.substr(13 + target_username.size() + tgt.size(), len);    // authenticator
+            uint32_t auth_len = toint(packet.substr(9 + target_username.size() + tgt_len, 4), 256); // authenticator length
+            std::string auth = packet.substr(13 + target_username.size() + tgt_len, auth_len);      // authenticator
 
             // check authenticator timestamp
-            auth = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, auth, SA);                          // decrypt authenticator
-            auth = auth.substr(BLOCK_SIZE + 2, auth.size() - BLOCK_SIZE - 2);                   // remove prefix
+            auth = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, auth, SA);                              // decrypt authenticator
+            auth = auth.substr(BLOCK_SIZE + 2, auth.size() - BLOCK_SIZE - 2);                       // remove prefix
 
             if (auth.size() != 4){
                 if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Bad timestamp size.")) < 1){}
@@ -283,7 +281,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             // get KB
             std::string KB = target -> get_key();
             KB = use_OpenPGP_CFB_decrypt(target -> get_sym(), RESYNC, KB, users_account_key);
-            KB = KB.substr(BLOCK_SIZE, KB.size() - BLOCK_SIZE);         // remove prefix
+            KB = KB.substr(BLOCK_SIZE + 2, KB.size() - BLOCK_SIZE - 2);         // remove prefix
 
             // encrypt ticket with KB
             ticket = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, ticket, KB, random_octets(BLOCK_SIZE));

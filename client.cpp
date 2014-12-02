@@ -97,7 +97,7 @@ int main(int argc, char * argv[]){
     std::string * username = nullptr;               // client's username
     std::string * KA = nullptr;                     // client's shared key (with KDC)
     std::string * SA = nullptr;                     // session key (with KDC)
-    std::string * tgt = nullptr;                    // TGT (encrypted - no TGT type for client)
+    std::string * tgt = nullptr;                    // TGT (encrypted with KDC key)
 
     // KAB and ticket must both be nullptr or point to something at the same time
     std::string * KAB = nullptr;                    // key between two users
@@ -176,7 +176,7 @@ int main(int argc, char * argv[]){
                     }
                 }
                 else{
-                    std::cout << "Error: Unexpected packet received" << std::endl;
+                    std::cerr << "Error: Unexpected packet received" << std::endl;
                 }
             }
         }
@@ -187,7 +187,7 @@ int main(int argc, char * argv[]){
             rc = recv_packets(lsock, {TALK_PACKET, END_TALK_PACKET}, packet, "Could not receive data.");
             if (rc == -2){}
             else if ((rc == -1) || (rc == 0)){
-                    std::cout << "Error: Bad socket. Session terminated." << std::endl;
+                    std::cerr << "Error: Bad socket. Session terminated." << std::endl;
                     close(lsock); lsock = -1;
                     delete KAB; KAB = nullptr;
                     delete ticket; ticket = nullptr;
@@ -275,11 +275,12 @@ int main(int argc, char * argv[]){
                                 std::cout << "Target: ";
                                 std::cin >> target;
                             }
+
                             std::string auth = unhexlify(makehex(now(), 8));                // cleartext timestamp
                             auth = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, auth, *SA, random_octets(BLOCK_SIZE));
                             packet = unhexlify(makehex(target.size(), 8)) + target +        // target name
                                      unhexlify(makehex(tgt -> size(), 8)) + *tgt +          // TGT
-                                     unhexlify(makehex(packet.size(), 8)) + auth;           // authenticator (encrypted with SA)
+                                     unhexlify(makehex(auth.size(), 8)) + auth;             // authenticator (encrypted with SA)
 
                             if ((rc = send_packets(sock, REQUEST_PACKET, packet)) < 1){
                                 break;
@@ -368,6 +369,7 @@ int main(int argc, char * argv[]){
                             delete tgt; tgt = nullptr;
                             delete KAB; KAB = nullptr;
                             delete ticket; ticket = nullptr;
+                            delete target_name; target_name = nullptr;
                             if ((rc = send_packets(sock, LOGOUT_PACKET, "", "Could not logout message.")) < 1){
                                 break;
                             }
@@ -395,6 +397,8 @@ int main(int argc, char * argv[]){
                             close(lsock); lsock = -1;
                             delete KAB; KAB = nullptr;
                             delete ticket; ticket = nullptr;
+                            talking = false;
+                            delete target_name; target_name = nullptr;
                             std::cout << "Session has terminated." << std::endl;
 
                             if (input == "\\quit"){                                 // completely stop program
@@ -408,7 +412,10 @@ int main(int argc, char * argv[]){
                                 }
                             }
                         }
-                        else{
+                        else{                                                       // normal messages
+                            if ((rc = send_packets(sock, QUIT_PACKET, input, "Could not send message.")) < 1){
+                                break;
+                            }
                         }
                     }
                     else{
@@ -416,6 +423,7 @@ int main(int argc, char * argv[]){
                         close(lsock); lsock = -1;
                         delete KAB; KAB = nullptr;
                         delete ticket; ticket = nullptr;
+                        talking = false;
                         delete target_name; target_name = nullptr;
                     }
                 }
@@ -440,8 +448,6 @@ int main(int argc, char * argv[]){
                         std::cout << "Password: ";
                         std::cin >> password;   // should hide input
 
-                        std::cout << "Sending login packet" << std::endl;
-
                         // send login request
                         packet = unhexlify(makehex(username -> size(), 8)) + *username;
 
@@ -458,8 +464,6 @@ int main(int argc, char * argv[]){
                             break;
                         }
 
-                        std::cout << "processing" << std::endl;
-
                         if (packet[0] == CREDENTIALS_PACKET){
                             // client transforms password into key
                             KA = new std::string(use_hash(HASH_NUM, packet.substr(1, DIGEST_SIZE) + password));
@@ -469,7 +473,6 @@ int main(int argc, char * argv[]){
 
                             // decrypt rest of data
                             packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet, *KA);
-                            std::cout << "decrypted credentials" << std::endl;
                             packet = packet.substr(BLOCK_SIZE + 2, packet.size() - BLOCK_SIZE - 2);  // remove prefix
 
                             SA = new std::string(packet.substr(0, KEY_SIZE));                        // get session key
@@ -482,7 +485,7 @@ int main(int argc, char * argv[]){
                             // start listening on another socket for incoming connections
                             lsock = create_server_socket(client_port);     // socket used to talk to someone (need to set to listen)
                             if (lsock == -1){
-                                std::cout << "Error: Could not start listening socket." << std::endl;
+                                std::cerr << "Error: Could not start listening socket." << std::endl;
                                 rc = -1;
                                 break;
                             }
