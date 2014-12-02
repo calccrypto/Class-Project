@@ -53,7 +53,8 @@ file for full license.
 #ifndef __SHARED__
 #define __SHARED__
 
-const std::array <uint8_t, 4> LOCALHOST = {127, 0, 0, 1}; // 127.0.0.1
+typedef std::array <uint8_t, 4> IPv4Address;
+const IPv4Address LOCALHOST = {127, 0, 0, 1};             // 127.0.0.1
 const uint16_t DEFAULT_SERVER_PORT = 45678;               // Ephemeral port for KDC
 const uint16_t DEFAULT_TALK_PORT = 56789;                 // Ephemeral port for talking to another client
 const int32_t TIME_SKEW = 300;                            // seconds (5 minutes)
@@ -123,8 +124,8 @@ int nonblock_getline(std::string & str, const std::string & delim = "\n");
 std::string random_octets(const unsigned int count = 0);
 
 // parse IPv4 strings of the form A.B.C.D
-std::array <uint8_t, 4> parse_ip(const std::string & str);
-std::array <uint8_t, 4> parse_ip(char * buf);
+IPv4Address parse_ip(const std::string & str);
+IPv4Address parse_ip(char * buf);
 
 // Length-Type-Value format (instead of Type-Length-Value)
 // 4 octet Length (including Type) + 1 octet Type + Value + random padding data

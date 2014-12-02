@@ -1,13 +1,10 @@
-**Fix OpenPGP encrypt/decrypt hash bug**
-**Make this stateless**
+**Fix OpenPGP encrypt/decrypt bug**
 hide user input when typing in password
-make crashing safer
-Make server stopping also force client (not client thread; that is already done) to stop
 Figure out why server thread won't stop after typing in quit
 change error messages to be more generic (to avoid account enumeration and other attacks)
 master key to decrypt KDC subkeys
-prevent too many login attempts on same account
 missing error message if server crashes before client stops
 add try/catch for things in OpenPGP that can throw
 OpenPGP CFB encrypt/decrypt is being weird
 add authenticator to each message sent from client to client
+multiple processes cannot listen to the same port at once, so multiple clients cannot listen to the same port

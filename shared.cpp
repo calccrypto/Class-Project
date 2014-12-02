@@ -103,7 +103,7 @@ std::string random_octets(const unsigned int count){
     return out;
 }
 
-std::array <uint8_t, 4> parse_ip(const std::string & str){
+IPv4Address parse_ip(const std::string & str){
     // return parse_ip(str.c_str());
     std::stringstream s; s << str;
     int ip0, ip1, ip2, ip3;
@@ -117,7 +117,7 @@ std::array <uint8_t, 4> parse_ip(const std::string & str){
     return {(uint8_t) ip0, (uint8_t) ip1, (uint8_t) ip2, (uint8_t) ip3};
 }
 
-std::array <uint8_t, 4> parse_ip (char * buf){
+IPv4Address parse_ip (char * buf){
     return parse_ip(std::string(buf));
 }
 
@@ -267,11 +267,6 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
     if (!unpacketize(INITIAL_SEND_PACKET, packet)){
         return -1;
     }
-
-    // if (packet[0] != INITIAL_SEND_PACKET){
-        // std::cerr << "Error: First packet is not initial send packet." << std::endl;
-        // return -1;
-    // }
 
     const uint32_t packet_count = toint(packet.substr(0, 4), 256);      // get number of packets that follow
     const uint8_t expected_type = packet[4];                            // get expected type
