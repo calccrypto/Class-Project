@@ -132,12 +132,29 @@ int main(int argc, char * argv[]){
                 if (packet[0] == START_TALK_PACKET){
                     // decrypt ticket
                     uint32_t len = toint(packet.substr(1, 4), 256);
-                    std::string ticket = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(5, len), *KA);
+                    std::string ticket;
+
+                    try{
+                        ticket = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(5, len), *KA);
+                    }
+                    catch (std::exception & e){
+                        if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad KA.", "Could not send error message")) < 1){
+                            break;
+                        }
+                    }
                     ticket = ticket.substr(BLOCK_SIZE + 2, ticket.size() - BLOCK_SIZE - 2);
 
                     // decrypt authenticator
                     len = toint(packet.substr(5 + len, 4), 256);
-                    std::string auth = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(5, len), *KA);
+                    std::string auth;
+                    try{
+                        auth = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(5, len), *KA);
+                    }
+                    catch (std::exception & e){
+                        if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad KA.", "Could not send error message")) < 1){
+                            break;
+                        }
+                    }
                     auth = auth.substr(BLOCK_SIZE + 2, auth.size() - BLOCK_SIZE - 2);
 
                     // parse ticket = name + KAB
@@ -196,8 +213,15 @@ int main(int argc, char * argv[]){
             }
             else{
                 if (packet[0] == TALK_PACKET){  // if outer packet is a TALK_PACKET
-                    packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *KAB);   // decrypt packet
-                    packet = packet.substr(BLOCK_SIZE + 2, packet.size() - BLOCK_SIZE - 2);                     // remove prefix
+                    try{
+                        packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *KAB);   // decrypt packet
+                    }
+                    catch (std::exception & e){
+                        if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad KAB.", "Could not send error message")) < 1){
+                            break;
+                        }
+                    }
+                    packet = packet.substr(BLOCK_SIZE + 2, packet.size() - BLOCK_SIZE - 2);                             // remove prefix
 
                     // no other packets should make it here
                     if (packet[0] == TALK_PACKET){              // display message
@@ -219,13 +243,6 @@ int main(int argc, char * argv[]){
             }
         }
 
-        // if previous loop's input was used
-        if (in_rc == 1){
-            input = "";
-            std::cout << "> ";
-        }
-
-
         rc = recv_packets(sock, {QUIT_PACKET}, packet, "Could not receive data from listening port.");
         if (rc == -2){}                             // received nothing
         else if ((rc == -1) || (rc == 0)){          // bad socket
@@ -234,6 +251,12 @@ int main(int argc, char * argv[]){
         else{                                       // received quit packet
             quit = true;
             break;
+        }
+
+        // if previous loop's input was used
+        if (in_rc == 1){
+            input = "";
+            std::cout << "> ";
         }
 
         // if command is inputted
@@ -292,9 +315,14 @@ int main(int argc, char * argv[]){
 
                             if (packet[0] == REPLY_PACKET){
                                 // parse reply
-
-                                // decrypt reply
-                                packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *SA);
+                                try{
+                                    packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *SA);   // decrypt reply
+                                }
+                                catch (std::exception & e){
+                                    if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad SA.", "Could not send error message")) < 1){
+                                        break;
+                                    }
+                                }
                                 packet = packet.substr(BLOCK_SIZE + 2, packet.size() - BLOCK_SIZE - 2);
 
                                 // check target's name
@@ -345,8 +373,15 @@ int main(int argc, char * argv[]){
                                     }
                                     else{
                                         if (packet[0] == START_TALK_REPLY_PACKET){
-                                            // decrypt packet
-                                            std::string reply = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *KAB);
+                                            std::string reply;
+                                            try{
+                                                reply = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *KAB);        // decrypt packet
+                                            }
+                                            catch (std::exception & e){
+                                                if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad KAB.", "Could not send error message")) < 1){
+                                                    break;
+                                                }
+                                            }
                                             reply = reply.substr(BLOCK_SIZE + 2, reply.size() - BLOCK_SIZE - 2);
                                             talking = (reply == std::string(BLOCK_SIZE, 0xff));
                                         }
@@ -471,8 +506,14 @@ int main(int argc, char * argv[]){
                             // remove KA salt
                             packet = packet.substr(1 + DIGEST_SIZE, packet.size() - DIGEST_SIZE - 1);
 
-                            // decrypt rest of data
-                            packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet, *KA);
+                            try{
+                                packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet, *KA);     // decrypt rest of data
+                            }
+                            catch (std::exception & e){
+                                if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad KA.", "Could not send error message")) < 1){
+                                    break;
+                                }
+                            }
                             packet = packet.substr(BLOCK_SIZE + 2, packet.size() - BLOCK_SIZE - 2);  // remove prefix
 
                             SA = new std::string(packet.substr(0, KEY_SIZE));                        // get session key
@@ -540,7 +581,7 @@ int main(int argc, char * argv[]){
                         // }
                         // else if (packet[0] == FAIL_PACKET){
                             // std::cerr << packet.substr(1, packet.size() - 1) << std::endl;
-                            // break;
+                            // continue;
                         // }
                         // else if (packet[0] == QUIT_PACKET){
                             // quit = true;
@@ -574,11 +615,10 @@ int main(int argc, char * argv[]){
                         }
                         else if (packet[0] == FAIL_PACKET){
                             std::cerr << "Error: Account could not be created" << std::endl;
-                            break;
+                            continue;
                         }
                         else if (packet[0] == QUIT_PACKET){
                             quit = true;
-                            break;
                         }
                     }
                     else{
