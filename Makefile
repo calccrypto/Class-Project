@@ -1,21 +1,13 @@
 # Class Project Makefile
 CXX?=g++
 CFLAGS=-std=c++11 -Wall
-LFLAGS=-lOpenPGP -lgmp -lgmpxx -lbz2 -lz -L../OpenPGP
+LFLAGS=-lOpenPGP -lgmp -lgmpxx -lbz2 -lz -L../OpenPGP -pthread
 TARGET=kerberos
 
 debug: CFLAGS += -g
 debug: all
 
 all: $(TARGET)
-
-.PHONY: OpenPGP
-
-OpenPGP:
-	$(MAKE) -C ../OpenPGP
-
-user.o: user.h user.cpp ../OpenPGP/OpenPGP.h
-	$(CXX) $(CFLAGS) -c user.cpp
 
 client.o: client.cpp shared.h ../OpenPGP/OpenPGP.h
 	$(CXX) $(CFLAGS) -c client.cpp
@@ -28,6 +20,9 @@ shared.o: shared.h shared.cpp ../OpenPGP/OpenPGP.h
 
 threaddata.o: threaddata.h threaddata.cpp user.h
 	$(CXX) $(CFLAGS) -c threaddata.cpp
+
+user.o: user.h user.cpp ../OpenPGP/OpenPGP.h
+	$(CXX) $(CFLAGS) -c user.cpp
 
 $(TARGET): shared.o client.o server.o user.o threaddata.o
 	$(CXX) $(CFLAGS) client.o shared.o $(LFLAGS) -o client

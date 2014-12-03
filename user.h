@@ -30,7 +30,7 @@ Header file for User class of Kerberos project
 
 #include <iostream>
 
-#include "../OpenPGP/common/includes.h"
+#include "../OpenPGP/OpenPGP.h"
 
 #include "shared.h"
 
