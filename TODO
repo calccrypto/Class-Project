@@ -8,3 +8,4 @@ add try/catch for things in OpenPGP that can throw
 OpenPGP CFB encrypt/decrypt is being weird
 add authenticator to each message sent from client to client
 multiple processes cannot listen to the same port at once, so multiple clients cannot listen to the same port
+fix segfault involving const std::string at top of server.cpp when compiling on Ubuntu

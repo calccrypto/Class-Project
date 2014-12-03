@@ -11,6 +11,7 @@ Please see LICENSE file for license. The networking code was modified from code 
 **It is the final project for our Fall 2014 Computer Security course, nothing more.**
 
 ## Requirements
+- Cygwin (compiling on Ubuntu causes a weird segfault)
 - GCC 4.9.2 or equivalent
 - POSIX libraries are required for sockets.
 - C++11 threads are used instead of POSIX threads.
