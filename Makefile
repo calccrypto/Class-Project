@@ -1,7 +1,7 @@
 # Class Project Makefile
 CXX?=g++
 CFLAGS=-std=c++11 -Wall
-LFLAGS=-lOpenPGP -lgmp -lgmpxx -lbz2 -lz -L../OpenPGP -pthread
+LFLAGS=-lOpenPGP -lgmp -lgmpxx -lbz2 -lz -L../OpenPGP -lpthread
 TARGET=kerberos
 
 debug: CFLAGS += -g

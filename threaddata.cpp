@@ -1,6 +1,6 @@
 #include "threaddata.h"
 
-ThreadData::ThreadData() : sock(-1), name(""), users(NULL), threads(NULL), quit(false) {}
+ThreadData::ThreadData() : sock(-1), name(""), users(nullptr), threads(nullptr), quit(false), config(nullptr) {}
 
 void ThreadData::set_sock(int s){
     sock = s;
@@ -26,6 +26,10 @@ void ThreadData::set_quit(const bool & q){
     quit = q;
 }
 
+void ThreadData::set_config(std::map <std::string, std::string> * c){
+    config = c;
+}
+
 int ThreadData::get_sock() const {
     return sock;
 }
@@ -48,4 +52,8 @@ std::map <ThreadData *, std::thread> * ThreadData::get_threads() const {
 
 bool ThreadData::get_quit() const {
     return quit;
+}
+
+std::map <std::string, std::string> * ThreadData::get_config() const {
+    return config;
 }

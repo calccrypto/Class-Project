@@ -44,16 +44,16 @@ under the 3-Clause BSD License. Please see LICENSE file for full license.
 #include "threaddata.h"
 #include "user.h"
 
-// move these to configuration file or something/////////
-const std::string secret_key = use_hash(HASH_NUM, "SUPER SECRET KEY");
-const std::string public_key_file = "testKDCpublic";
-const std::string private_key_file = "testKDCprivate";
-const std::string pki_key = "KDC";
-const std::string users_file = "user";
-const std::string users_file_key = use_hash(HASH_NUM, "USERS FILE KEY");
-const std::string users_account_key = use_hash(HASH_NUM, "USERS ACCOUNT KEY");
-const std::string tgt_key = use_hash(HASH_NUM, "TGT KEY");
-// //////////////////////////////////////////////////////
+// map keys for configuration data /////////////////////////
+const std::string SECRET_KEY = "secret key";
+const std::string PUBLIC_KEY_FILE = "public key file";
+const std::string PRIVATE_KEY_FILE = "private key file";
+const std::string PKI_KEY = "pki_key";
+const std::string USERS_FILE = "users";
+const std::string USERS_KEY = "users key";
+const std::string USERS_ACCOUNT_KEY = "users account key";
+const std::string TGT_KEY = "TGT key";
+// /////////////////////////////////////////////////////////
 
 // stuff the user sees
 // need to prevent user from logging in multiple times at once
@@ -103,9 +103,9 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
             if (packet[0] == PKA_ENCRYPTED_PACKET){
                 packet = packet.substr(1, packet.size());
-                std::ifstream pri_file(private_key_file, std::ios::binary);
+                std::ifstream pri_file(args -> get_config() -> at(PRIVATE_KEY_FILE), std::ios::binary);
                 if (!pri_file){
-                    std::cerr << "Error: Unable to open \"" << private_key_file << "\"" << std::endl;
+                    std::cerr << "Error: Unable to open \"" << args -> get_config() -> at(PRIVATE_KEY_FILE) << "\"" << std::endl;
                     if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Unable to open secret key.")) < 1){
                         continue;
                     }
@@ -143,7 +143,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 new_user.set_hash(HASH_NUM);
                 new_user.set_uid(random_octets(DIGEST_SIZE), new_username);
                 // encrypt shared key with KDC key
-                new_user.set_key(KA_salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, KA, users_account_key, random_octets(BLOCK_SIZE)));
+                new_user.set_key(KA_salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, KA, args -> get_config() -> at(USERS_ACCOUNT_KEY), random_octets(BLOCK_SIZE)));
 
                 // add new user to database (in memory)
                 mutex.lock();
@@ -180,14 +180,14 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
                 // TGT = E(username + SA) with KDC key
                 std::string tgt = unhexlify(makehex(username.size(), 8)) + username + SA;
-                tgt = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, tgt, tgt_key, random_octets(BLOCK_SIZE));
+                tgt = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, tgt,  args -> get_config() -> at(TGT_KEY), random_octets(BLOCK_SIZE));
 
                 // (SA, TGT)
                 packet = SA + unhexlify(makehex(tgt.size(), 8)) + tgt;
 
                 std::string KA;
                 try{
-                    KA = use_OpenPGP_CFB_decrypt(client -> get_sym(), RESYNC, client -> get_key(), users_account_key);  // decrypt KA
+                    KA = use_OpenPGP_CFB_decrypt(client -> get_sym(), RESYNC, client -> get_key(),  args -> get_config() -> at(USERS_ACCOUNT_KEY));  // decrypt KA
                 }
                 catch (std::exception & e){
                     if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Bad user account key.", "Could not send error message")) < 1){
@@ -230,38 +230,38 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             }
 
             // get TGT
-            uint32_t tgt_len = toint(packet.substr(5 + target_username.size(), 4), 256);            // TGT length
-            std::string tgt = packet.substr(9 + target_username.size(), tgt_len);                   // TGT
+            uint32_t tgt_len = toint(packet.substr(5 + target_username.size(), 4), 256);                    // TGT length
+            std::string tgt = packet.substr(9 + target_username.size(), tgt_len);                           // TGT
 
             try{
-                tgt = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, tgt, tgt_key);                       // decrypt TGT
+                tgt = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, tgt,  args -> get_config() -> at(TGT_KEY));  // decrypt TGT
             }
             catch (std::exception & e){
                 if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Bad tgt key.", "Could not send error message")) < 1){
                     break;
                 }
             }
-            tgt = tgt.substr(BLOCK_SIZE + 2, tgt.size() - BLOCK_SIZE - 2);                          // remove prefix
+            tgt = tgt.substr(BLOCK_SIZE + 2, tgt.size() - BLOCK_SIZE - 2);                                  // remove prefix
 
             // parse TGT
             uint32_t init_len = toint(tgt.substr(0, 4), 256);
-            std::string username = tgt.substr(4, init_len);                                         // get initiator's username
-            std::string SA = tgt.substr(4 + init_len, KEY_SIZE);                                    // get SA
+            std::string username = tgt.substr(4, init_len);                                                 // get initiator's username
+            std::string SA = tgt.substr(4 + init_len, KEY_SIZE);                                            // get SA
 
             // get authenticator
-            uint32_t auth_len = toint(packet.substr(9 + target_username.size() + tgt_len, 4), 256); // authenticator length
-            std::string auth = packet.substr(13 + target_username.size() + tgt_len, auth_len);      // authenticator
+            uint32_t auth_len = toint(packet.substr(9 + target_username.size() + tgt_len, 4), 256);         // authenticator length
+            std::string auth = packet.substr(13 + target_username.size() + tgt_len, auth_len);              // authenticator
 
             // check authenticator timestamp
             try{
-                auth = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, auth, SA);                          // decrypt authenticator
+                auth = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, auth, SA);                                  // decrypt authenticator
             }
             catch (std::exception & e){
                 if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Bad SA.", "Could not send error message")) < 1){
                     break;
                 }
             }
-            auth = auth.substr(BLOCK_SIZE + 2, auth.size() - BLOCK_SIZE - 2);                       // remove prefix
+            auth = auth.substr(BLOCK_SIZE + 2, auth.size() - BLOCK_SIZE - 2);                               // remove prefix
 
             if (auth.size() != 4){
                 if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Bad timestamp size.")) < 1){}
@@ -302,7 +302,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
             std::string KB = target -> get_key();
             try{
-                KB = use_OpenPGP_CFB_decrypt(target -> get_sym(), RESYNC, KB, users_account_key);   // decrypt KB
+                KB = use_OpenPGP_CFB_decrypt(target -> get_sym(), RESYNC, KB,  args -> get_config() -> at(USERS_ACCOUNT_KEY));   // decrypt KB
             }
             catch (std::exception & e){
                 if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Bad user account key.", "Could not send error message")) < 1){
@@ -350,7 +350,7 @@ const std::map <std::string, std::string> SERVER_HELP = {
 };
 
 // write user data to file
-bool save_users(std::mutex & mutex, std::ofstream & save, const std::set <User> & users, const std::string & key){
+bool save_users(std::mutex & mutex, const std::set <User> & users, std::ofstream & save, const std::string & key){
     std::lock_guard<std::mutex> lock(mutex);
 
     if (!save){
@@ -386,13 +386,13 @@ bool save_users(std::mutex & mutex, std::ofstream & save, const std::set <User> 
     return true;
 }
 
-bool save_users(std::mutex & mutex, const std::string & file, const std::set <User> & users, const std::string & key){
+bool save_users(std::mutex & mutex, const std::set <User> & users, const std::string & file, const std::string & key){
     std::ofstream save(file, std::ios::binary);
     if (!save){
         std::cerr << "Error: Could not open file \"" << file << "\"" << std::endl;
         return false;
     }
-    return save_users(mutex, save, users, key);
+    return save_users(mutex, users, save, key);
 }
 
 // read user data from file
@@ -401,7 +401,7 @@ bool save_users(std::mutex & mutex, const std::string & file, const std::set <Us
 // -1   = nothing in file
 // 0    = good
 // > 0  = # of bad records
-int read_users(std::mutex & mutex, std::ifstream & save, std::set <User> & users, const std::string & key){
+int read_users(std::mutex & mutex, std::set <User> & users, std::ifstream & save, const std::string & key){
     std::lock_guard<std::mutex> lock(mutex);
 
     if (!save){
@@ -451,7 +451,7 @@ int read_users(std::mutex & mutex, std::ifstream & save, std::set <User> & users
     return rc;
 }
 
-int read_users(std::mutex & mutex, const std::string & file, std::set <User> & users, const std::string & key){
+int read_users(std::mutex & mutex, std::set <User> & users, const std::string & file, const std::string & key){
     std::ifstream save(file, std::ios::binary);
     if (!save){
         std::cerr << "Warning: Could not open file \"" << file << "\" - creating file." << std::endl;
@@ -461,7 +461,7 @@ int read_users(std::mutex & mutex, const std::string & file, std::set <User> & u
         }
         return true;
     }
-    return read_users(mutex, save, users, key);
+    return read_users(mutex, users, save, key);
 }
 
 unsigned int clean_threads(std::map <ThreadData *, std::thread> & threads, std::mutex & mutex){
@@ -480,8 +480,8 @@ unsigned int clean_threads(std::map <ThreadData *, std::thread> & threads, std::
 }
 
 // admin command line
-void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <User> & users, std::mutex & mutex, bool & quit){
-    int rc = read_users(mutex, users_file, users, secret_key);
+void * server_thread(std::map <std::string, std::string> & config, std::map <ThreadData *, std::thread> & threads, std::set <User> & users, std::mutex & mutex, bool & quit){
+    int rc = read_users(mutex, users, config.at(USERS_FILE),  config.at(USERS_KEY));
 
     // Open users file
     if (rc == -2){
@@ -506,7 +506,7 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
                 }
                 else if (cmd == "quit"){                        // stop server
                     quit = true;
-                    if (save_users(mutex, "user", users, secret_key)){
+                    if (save_users(mutex, users, config.at(USERS_FILE), config.at(USERS_KEY))){
                         std::cout << "Database saved" << std::endl;
                     }
                     else{
@@ -519,7 +519,7 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
                     continue;
                 }
                 else if (cmd == "save"){                        // save users into databsse
-                    if (save_users(mutex, "user", users, secret_key)){
+                    if (save_users(mutex, users, config.at(USERS_FILE), config.at(USERS_KEY))){
                         std::cout << "Database saved" << "." << std::endl;
                     }
                     else{
@@ -576,7 +576,7 @@ void * server_thread(std::map <ThreadData *, std::thread> & threads, std::set <U
                             u.set_hash(HASH_NUM);
                             u.set_uid(random_octets(DIGEST_SIZE), new_username);
                             std::string salt = random_octets(DIGEST_SIZE);
-                            u.set_key(salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, use_hash(HASH_NUM, salt + password), users_account_key, random_octets(DIGEST_SIZE)));
+                            u.set_key(salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, use_hash(HASH_NUM, salt + password), config.at(USERS_ACCOUNT_KEY), random_octets(DIGEST_SIZE)));
                             users.insert(u);
                             mutex.unlock();
                         }
@@ -644,15 +644,25 @@ int main(int argc, char * argv[]){
     }
 
     // put together variables to pass into administrator thread
-    std::set <User> users;                          // list of all users
-    std::map <ThreadData *, std::thread> threads;   // list of running threads (need to keep track of)
-    std::mutex mutex;                               // global mutex
-    bool quit = false;                              // global quit controlled by administrator
+    std::set <User> users;                                                            // list of all users
+    std::map <ThreadData *, std::thread> threads;                                     // list of running threads (need to keep track of)
+    std::mutex mutex;                                                                 // global mutex
+    bool quit = false;                                                                // global quit controlled by administrator
+    std::map <std::string, std::string> config = {                                    // configuration data
+        std::make_pair(SECRET_KEY, use_hash(HASH_NUM, "SUPER SECRET KEY")),           // encrypts all keys
+        std::make_pair(PUBLIC_KEY_FILE, "testKDCpublic"),                             // public key file
+        std::make_pair(PRIVATE_KEY_FILE, "testKDCprivate"),                           // private key file
+        std::make_pair(PKI_KEY, "KDC"),                                               // key to unlock private key data
+        std::make_pair(USERS_FILE, "users"),                                          // name of file containing users
+        std::make_pair(USERS_KEY, use_hash(HASH_NUM, "USERS FILE KEY")),              // key for users list
+        std::make_pair(USERS_ACCOUNT_KEY, use_hash(HASH_NUM, "USERS ACCOUNT KEY")),   // key for shared keys
+        std::make_pair(TGT_KEY, use_hash(HASH_NUM, "TGT KEY"))                        // key for TGT
+    };
 
     // start administrator command line thread (necessary)
     std::thread admin;
     try{
-       admin = std::thread(server_thread, std::ref(threads), std::ref(users), std::ref(mutex), std::ref(quit));
+       admin = std::thread(server_thread, std::ref(config), std::ref(threads), std::ref(users), std::ref(mutex), std::ref(quit));
     }
     catch (std::system_error & sys_err){
         std::cerr << "Could not create thread due to: " << sys_err.what() << "." << std::endl;
@@ -677,6 +687,7 @@ int main(int argc, char * argv[]){
             threaddata -> set_users(&users);
             threaddata -> set_threads(&threads);
             threaddata -> set_quit(false);
+            threaddata -> set_config(&config);
 
             threads[threaddata] = std::thread(client_thread, threaddata, std::ref(mutex), std::ref(quit));
         }

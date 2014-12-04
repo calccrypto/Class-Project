@@ -40,6 +40,7 @@ file for full license.
 
 #include <array>
 #include <chrono>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

@@ -44,7 +44,8 @@ class ThreadData{
         uint32_t thread_id;                                 // thread id (might not be necessary)
         std::set <User> * users;                            // reference to set of all users
         std::map <ThreadData *, std::thread> * threads;     // reference to all running threads
-        bool quit;                                          // reference variable to tell thread to quit from outside of thread
+        bool quit;                                          // variable to tell thread to quit from outside of thread
+        std::map <std::string, std::string> * config;       // reference to configuration data
 
     public:
         ThreadData();
@@ -56,6 +57,7 @@ class ThreadData{
         void set_users(std::set <User> * u);
         void set_threads(std::map <ThreadData *, std::thread> * t);
         void set_quit(const bool & q);
+        void set_config(std::map <std::string, std::string> * c);
 
         // Accessors
         int get_sock() const;
@@ -64,6 +66,7 @@ class ThreadData{
         std::set <User> * get_users();
         std::map <ThreadData *, std::thread> * get_threads() const;
         bool get_quit() const;
+        std::map <std::string, std::string> * get_config() const;
 };
 
 #endif
