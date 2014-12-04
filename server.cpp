@@ -88,7 +88,9 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             // }
             // else{                               // if not opened
                 // std::cerr << "Could not open public key file \"" << public_key_file << "\"" << std::endl;
-                // if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Could not open public key.")) < 1){}
+                // if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Could not open public key.")) < 1){
+                //     break;
+                // }
                 // continue;
             // }
 
@@ -126,7 +128,9 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 }
 
                 if (exists){
-                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "")) < 1){}
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "")) < 1){
+                        break;
+                    }
                     continue;
                 }
 
@@ -147,7 +151,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
                 // send success packet
                 if ((rc = send_packets(args -> get_sock(), SUCCESS_PACKET, "", "Could not send account creation success packet")) < 1){
-                    continue;
+                    break;
                 }
             }
             else if (packet[0] == FAIL_PACKET){
@@ -182,90 +186,113 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
                 std::string KA;
                 try{
-                    KA = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, client -> get_key(),  args -> get_config() -> at(USERS_ACCOUNT_KEY));  // decrypt KA
+                    KA = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, client -> get_key(),  args -> get_config() -> at(USERS_ACCOUNT_KEY)); // decrypt KA
+                    KA = KA.substr(BLOCK_SIZE + 2, KA.size() - BLOCK_SIZE - 2);                                                         // remove prefix
                 }
                 catch (std::exception & e){
+                    std::cerr << e.what() << std::endl;
                     if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Bad user account key.", "Could not send error message")) < 1){
                         break;
                     }
+                    continue;
                 }
-                KA = KA.substr(BLOCK_SIZE + 2, KA.size() - BLOCK_SIZE - 2);                                             // remove prefix
 
                 // send KA salt with E(SA, TGT) with KA
                 packet = client -> get_key_salt() + use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, KA, random_octets(BLOCK_SIZE));
 
                 if ((rc = send_packets(args -> get_sock(), CREDENTIALS_PACKET, packet, "Could not send session key and TGT.")) < 1){
                     delete client; client = nullptr;
-                    continue;
+                    break;
                 }
             }
             else{           // user not found
-                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Could not find username.", "Could not send failure message.")) < 1){}
+                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Could not find username.", "Could not send failure message.")) < 1){
+                    break;
+                }
                 continue;
             }
 
             delete client; client = nullptr;
         }
-        else if (packet[0] == REQUEST_PACKET){                                                      // client wants to talk to someone
-            uint32_t target_len = toint(packet.substr(1, 4), 256);
-            std::string target_username = packet.substr(5, target_len);
+        else if (packet[0] == REQUEST_PACKET){                                                              // client wants to talk to someone
+            uint32_t tgt_len = toint(packet.substr(1, 4), 256);
+            std::string tgt = packet.substr(5, tgt_len);
 
-            // check that target exists
-            User * target = nullptr;
-            for(User const & u : *(args -> get_users())){
-                if (u == target_username){
-                    target = new User(u);
-                    break;
-                }
-            }
-
-            if (!target){
-                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Target not found.")) < 1){}
-                continue;
-            }
-
-            // get TGT
-            uint32_t tgt_len = toint(packet.substr(5 + target_username.size(), 4), 256);                    // TGT length
-            std::string tgt = packet.substr(9 + target_username.size(), tgt_len);                           // TGT
-
+            // decrypt TGT
             try{
-                tgt = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, tgt,  args -> get_config() -> at(TGT_KEY));  // decrypt TGT
+                tgt = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, tgt, args -> get_config() -> at(TGT_KEY));
+                tgt = tgt.substr(BLOCK_SIZE + 2, tgt.size() - BLOCK_SIZE - 2);
             }
             catch (std::exception & e){
-                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Bad tgt key.", "Could not send error message")) < 1){
+                std::cerr <<1 << e.what() << std::endl;
+                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "Error: Bad TGT key.", "Could not send error message")) < 1){
                     break;
                 }
+                continue;
             }
-            tgt = tgt.substr(BLOCK_SIZE + 2, tgt.size() - BLOCK_SIZE - 2);                                  // remove prefix
 
             // parse TGT
             uint32_t init_len = toint(tgt.substr(0, 4), 256);
             std::string username = tgt.substr(4, init_len);                                                 // get initiator's username
             std::string SA = tgt.substr(4 + init_len, KEY_SIZE);                                            // get SA
 
-            // get authenticator
-            uint32_t auth_len = toint(packet.substr(9 + target_username.size() + tgt_len, 4), 256);         // authenticator length
-            std::string auth = packet.substr(13 + target_username.size() + tgt_len, auth_len);              // authenticator
-
-            // check authenticator timestamp
+            // decrypt request with SA
+            uint32_t req_len = toint(packet.substr(5 + tgt_len, 4), 256);
+            std::string request = packet.substr(9 + tgt_len, req_len);
             try{
-                auth = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, auth, SA);                                  // decrypt authenticator
+                request = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, request, SA);
+                request = request.substr(BLOCK_SIZE + 2, request.size() - BLOCK_SIZE - 2);
             }
             catch (std::exception & e){
-                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Bad SA.", "Could not send error message")) < 1){
+                std::cerr <<2 << e.what() << std::endl;
+                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "Error: Bad session key.", "Could not send error message")) < 1){
                     break;
                 }
-            }
-            auth = auth.substr(BLOCK_SIZE + 2, auth.size() - BLOCK_SIZE - 2);                               // remove prefix
-
-            if (auth.size() != 4){
-                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Bad timestamp size.")) < 1){}
                 continue;
             }
 
-            uint32_t timestamp = toint(auth, 256);
-            if ((now() - timestamp) > TIME_SKEW){
-                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Too much time has passed")) < 1){}
+            // check request hash
+            if (use_hash(HASH_NUM, request.substr(0, request.size() - DIGEST_SIZE)) != request.substr(request.size() - DIGEST_SIZE, DIGEST_SIZE)){
+                std::cerr << "Error: Request hash does not match" << std::endl;
+                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "Error: Bad hash.", "Could not send error message")) < 1){
+                    break;
+                }
+                continue;
+            }
+
+            uint32_t target_len = toint(request.substr(0, 4), 256);
+            std::string target_username = request.substr(4, target_len);
+            uint32_t auth_len = toint(request.substr(4 + target_len, 4), 256);
+            std::string auth = request.substr(8 + target_len, auth_len);
+
+            // check authenticator
+            if (auth.size() != 4){
+                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Bad timestamp size.", "Could send error message")) < 1){
+                    break;
+                }
+                continue;
+            }
+
+            if ((now() - toint(auth, 256)) > TIME_SKEW){
+                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Request has expired.", "Could send error message")) < 1){
+                    break;
+                }
+                continue;
+            }
+
+            // check that target exists
+            User * target = nullptr;
+            for(User const & u : *(args -> get_users())){
+                if (u.match(HASH_NUM, target_username)){
+                    target = new User(u);
+                    break;
+                }
+            }
+
+            if (!target){
+                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Target not found.")) < 1){
+                    break;
+                }
                 continue;
             }
 
@@ -297,14 +324,16 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
             std::string KB = target -> get_key();
             try{
-                KB = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, KB,  args -> get_config() -> at(USERS_ACCOUNT_KEY));   // decrypt KB
+                KB = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, KB,  args -> get_config() -> at(USERS_ACCOUNT_KEY));  // decrypt KB
+                KB = KB.substr(BLOCK_SIZE + 2, KB.size() - BLOCK_SIZE - 2);                                         // remove prefix
             }
             catch (std::exception & e){
+                std::cerr << e.what() << std::endl;
                 if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "Error: Bad user account key.", "Could not send error message")) < 1){
                     break;
                 }
+                continue;
             }
-            KB = KB.substr(BLOCK_SIZE + 2, KB.size() - BLOCK_SIZE - 2);                             // remove prefix
 
             // encrypt ticket with KB
             ticket = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, ticket, KB, random_octets(BLOCK_SIZE));
@@ -313,11 +342,12 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             packet = unhexlify(makehex(target_username.size(), 8)) + target_username +
                      KAB +
                      unhexlify(makehex(ticket.size(), 8)) + ticket;
+            packet += use_hash(HASH_NUM, packet);
             packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, SA, random_octets(BLOCK_SIZE));
 
             // send reply placket
             if ((rc = send_packets(args -> get_sock(), REPLY_PACKET, packet)) < 1){
-                continue;
+                break;
             }
         }
     }
@@ -413,34 +443,33 @@ int read_users(std::mutex & mutex, std::set <User> & users, std::ifstream & save
 
     try{
         users_str = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, users_str, key);               // decrypt file data
+        users_str = users_str.substr(BLOCK_SIZE + 2, users_str.size() - BLOCK_SIZE - 2);        // remove prefix
     }
     catch (std::exception & e){
         std::cout << "Error: Bad database key." << std::endl;
         return -2;          // bad password
     }
-    users_str = users_str.substr(BLOCK_SIZE + 2, users_str.size() - BLOCK_SIZE - 2);        // remove prefix
 
-    uint32_t DS = DIGEST_SIZE;
-    if (use_hash(HASH_NUM, users_str.substr(0, users_str.size() - DS)) != users_str.substr(users_str.size() - DS, DS)){
+    if (use_hash(HASH_NUM, users_str.substr(0, users_str.size() - DIGEST_SIZE)) != users_str.substr(users_str.size() - DIGEST_SIZE, DIGEST_SIZE)){
         std::cerr << "Error: File checksum does not match" << std::endl;
         return -3;          // bad hash
     }
     // remove checksum
-    users_str = users_str.substr(0, users_str.size() - DS);
+    users_str = users_str.substr(0, users_str.size() - DIGEST_SIZE);
 
     int rc = 0;
     unsigned int i = 0;
     while (i < users_str.size()){
         uint32_t N = toint(users_str.substr(i, 4), 256);
         // if record matches, save it
-        if (use_hash(HASH_NUM, users_str.substr(i, N + 4)) == users_str.substr(i + 4 + N, DS)){
+        if (use_hash(HASH_NUM, users_str.substr(i, N + 4)) == users_str.substr(i + 4 + N, DIGEST_SIZE)){
             users.insert(User(users_str.substr(i + 4, N)));
         }
         else{
             std::cout << "Warning: Found corrupted record" << std::endl;
             rc++;
         }
-        i += 4 + N + DS;
+        i += 4 + N + DIGEST_SIZE;
     }
 
     return rc;
