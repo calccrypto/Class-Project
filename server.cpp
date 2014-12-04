@@ -29,10 +29,7 @@ The networking code using POSIX sockets (Lines 61 - 104) was written by Andrew Z
 under the 3-Clause BSD License. Please see LICENSE file for full license.
 */
 
-#include <chrono>
 #include <fstream>
-#include <iostream>
-#include <map>
 #include <mutex>
 #include <set>
 #include <system_error>
@@ -65,7 +62,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
     // accept commands
     while (!quit && !(args -> get_quit()) && rc){
-        if ((rc = recv_packets(args -> get_sock(), {QUIT_PACKET, CREATE_ACCOUNT_PACKET, LOGIN_PACKET, REQUEST_PACKET, LOGOUT_PACKET}, packet, "Could not receive packets")) < 1){
+        if ((rc = recv_packets(args -> get_sock(), {QUIT_PACKET, CREATE_ACCOUNT_PACKET, LOGIN_PACKET, REQUEST_PACKET}, packet, "Could not receive packets")) < 1){
             continue;
         }
 
@@ -122,7 +119,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 // search for user in database
                 bool exists = false;
                 for(User const & u : *(args -> get_users())){
-                    if (u == new_username){
+                    if (u.match(HASH_NUM, new_username)){
                         exists = true;
                         break;
                     }
@@ -139,11 +136,9 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
                 // create new user
                 User new_user;
-                new_user.set_sym(SYM_NUM);
-                new_user.set_hash(HASH_NUM);
-                new_user.set_uid(random_octets(DIGEST_SIZE), new_username);
+                new_user.set_uid(HASH_NUM, random_octets(DIGEST_SIZE), new_username);
                 // encrypt shared key with KDC key
-                new_user.set_key(KA_salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, KA, args -> get_config() -> at(USERS_ACCOUNT_KEY), random_octets(BLOCK_SIZE)));
+                new_user.set_key(HASH_NUM, KA_salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, KA, args -> get_config() -> at(USERS_ACCOUNT_KEY), random_octets(BLOCK_SIZE)));
 
                 // add new user to database (in memory)
                 mutex.lock();
@@ -168,7 +163,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             User * client = nullptr;
             // search database for user
             for(User const & u : *(args -> get_users())){
-                if (u == username){
+                if (u.match(HASH_NUM, username)){
                     client = new User(u);
                     break;
                 }
@@ -187,7 +182,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
                 std::string KA;
                 try{
-                    KA = use_OpenPGP_CFB_decrypt(client -> get_sym(), RESYNC, client -> get_key(),  args -> get_config() -> at(USERS_ACCOUNT_KEY));  // decrypt KA
+                    KA = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, client -> get_key(),  args -> get_config() -> at(USERS_ACCOUNT_KEY));  // decrypt KA
                 }
                 catch (std::exception & e){
                     if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Bad user account key.", "Could not send error message")) < 1){
@@ -302,10 +297,10 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
             std::string KB = target -> get_key();
             try{
-                KB = use_OpenPGP_CFB_decrypt(target -> get_sym(), RESYNC, KB,  args -> get_config() -> at(USERS_ACCOUNT_KEY));   // decrypt KB
+                KB = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, KB,  args -> get_config() -> at(USERS_ACCOUNT_KEY));   // decrypt KB
             }
             catch (std::exception & e){
-                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Bad user account key.", "Could not send error message")) < 1){
+                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "Error: Bad user account key.", "Could not send error message")) < 1){
                     break;
                 }
             }
@@ -562,7 +557,7 @@ void * server_thread(std::map <std::string, std::string> & config, std::map <Thr
                         // check for pre-existing user
                         bool found = false;
                         for(User const & u : users){
-                            if (u == new_username){
+                            if (u.match(HASH_NUM, new_username)){
                                 break;
                             }
                         }
@@ -572,11 +567,9 @@ void * server_thread(std::map <std::string, std::string> & config, std::map <Thr
                         else{
                             mutex.lock();
                             User u;
-                            u.set_sym(SYM_NUM);
-                            u.set_hash(HASH_NUM);
-                            u.set_uid(random_octets(DIGEST_SIZE), new_username);
+                            u.set_uid(HASH_NUM, random_octets(DIGEST_SIZE), new_username);
                             std::string salt = random_octets(DIGEST_SIZE);
-                            u.set_key(salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, use_hash(HASH_NUM, salt + password), config.at(USERS_ACCOUNT_KEY), random_octets(DIGEST_SIZE)));
+                            u.set_key(HASH_NUM, salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, use_hash(HASH_NUM, salt + password), config.at(USERS_ACCOUNT_KEY), random_octets(DIGEST_SIZE)));
                             users.insert(u);
                             mutex.unlock();
                         }

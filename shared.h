@@ -71,7 +71,7 @@ const uint8_t HASH_NUM = 8;                                                     
 const std::string HASH_NAME = Hash_Algorithms.at(HASH_NUM);                         // default hash algorithm name
 const unsigned int DIGEST_SIZE = Hash_Length.at(HASH_NAME) >> 3;                    // hashing algorithm output size (octets)
 const uint8_t COMPRESSION_ALGORITHM = 1;                                            // default compression algorithm: ZLIB
-const uint32_t RESYNC = 9;                                                          // OpenPGP packet tag 18 does not trigger resync
+const uint32_t RESYNC = 9;                                                          // OpenPGP packet tag 9 triggers resync
 
 const uint32_t PACKET_SIZE = 128;                         // 128 octets per packet
 const uint32_t PACKET_HEADER_SIZE = 1;                    // 1 octet
@@ -93,21 +93,18 @@ const int8_t CREDENTIALS_PACKET      = 6;                 // session key and TGT
 const int8_t REQUEST_PACKET          = 7;                 // target name + TGT + authenticator
 
 // packets created after starting packets
-const int8_t LOGOUT_PACKET           = 8;                 // no payload (?)
-const int8_t REPLY_PACKET            = 9;                 // response to request packet
-const int8_t PKA_ENCRYPTED_PACKET    = 10;                // symmetrically encrypted data
-const int8_t PUBLIC_KEY_PACKET       = 11;                // a PGP Public Key Block
+const int8_t REPLY_PACKET            = 8;                 // response to request packet
+const int8_t PKA_ENCRYPTED_PACKET    = 9;                 // symmetrically encrypted data
+const int8_t PUBLIC_KEY_PACKET       = 10;                // a PGP Public Key Block
 
 // session packets
-const int8_t START_TALK_PACKET       = 12;                // ticket + authenticator
-const int8_t START_TALK_REPLY_PACKET = 13;                // encrypted response of BLOCK_SIZE >> 3 octets of 0s or 1s
-const int8_t TALK_PACKET             = 14;                // encrypted data of 1 octet TALK_PACKET or END_TALK_PACKET, followed by message, if any
+const int8_t START_TALK_PACKET       = 11;                // ticket + authenticator
+const int8_t START_TALK_REPLY_PACKET = 12;                // encrypted response of BLOCK_SIZE >> 3 octets of 0s or 1s
+const int8_t TALK_PACKET             = 13;                // encrypted data of 1 octet TALK_PACKET or END_TALK_PACKET, followed by timestamp + message + hash
 
 // special packets
-const int8_t INITIAL_SEND_PACKET     = 15;                // 4 octet packet count + 1 octet expected type
-const int8_t END_TALK_PACKET         = 16;                // only a tag, not actual packet type
-
-// const int8_t _PACKET = ;
+const int8_t INITIAL_SEND_PACKET     = 14;                // 4 octet packet count + 1 octet expected type
+const int8_t END_TALK_PACKET         = 15;                // octet hidden inside a TALK_PACKET
 
 // returns network sockets or error values
 int create_server_socket(const uint16_t port);
@@ -141,6 +138,4 @@ int send_packets(int sock, const uint8_t & type, const std::string & data, const
 
 // receive and unpack multiple packets of data
 int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & data, const std::string & err = "Could not receive data" );
-
-// probably also want encrypted send/recv
 #endif

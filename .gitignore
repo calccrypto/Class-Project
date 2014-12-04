@@ -44,6 +44,5 @@ Temporary Items
 
 *.exe
 *.o
-user
-user.back
+users
 *.stackdump

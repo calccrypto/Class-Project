@@ -181,7 +181,7 @@ int main(int argc, char * argv[]){
 
                     // reply to initiator (y/n)
                     std::string reply;
-                    std::cin >> reply;
+                    while ((std::cin >> reply) && (reply != "y") && (reply != "n"));
 
                     talking = (reply == "y");
                     target_name = new std::string(requester);
@@ -217,17 +217,33 @@ int main(int argc, char * argv[]){
                         packet = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, packet.substr(1, packet.size() - 1), *KAB);   // decrypt packet
                     }
                     catch (std::exception & e){
-                        if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad KAB.", "Could not send error message")) < 1){
-                            break;
-                        }
+                        std::cerr << "Error: Different key used to encrypt data. Session terminated." << std::endl;
+                        close(lsock); lsock = -1;
+                        delete KAB; KAB = nullptr;
+                        delete ticket; ticket = nullptr;
+                        delete target_name; target_name = nullptr;
+                        talking = false;
+                        continue;
                     }
                     packet = packet.substr(BLOCK_SIZE + 2, packet.size() - BLOCK_SIZE - 2);                             // remove prefix
 
-                    // no other packets should make it here
-                    if (packet[0] == TALK_PACKET){              // display message
-                        std::cout << ": " << packet.substr(1, packet.size() - 1) << std::endl;
+                    // check the hash
+                    if (use_hash(HASH_NUM, packet.substr(1, packet.size() - DIGEST_SIZE - 1)) != packet.substr(packet.size() - DIGEST_SIZE, DIGEST_SIZE)){
+                        std::cerr << "Error: Received bad packet" << std::endl;
+                        continue;
                     }
-                    else if (packet[0] == END_TALK_PACKET){     // end session
+
+                    // check if the packet has expired
+                    uint32_t timestamp = toint(packet.substr(0, 4));
+                    if ((now() - timestamp) > TIME_SKEW){
+                        std::cerr << "Error: Received expired message." << std::endl;
+                        continue;
+                    }
+
+                    if (packet[0] == TALK_PACKET){
+                        std::cout << ": " << packet.substr(5, packet.size() - 5) << std::endl;
+                    }
+                    else if (packet[0] == END_TALK_PACKET){
                         std::cout << *target_name << " has terminated session." << std::endl;
                         close(lsock); lsock = -1;
                         delete KAB; KAB = nullptr;
@@ -235,11 +251,8 @@ int main(int argc, char * argv[]){
                         delete target_name; target_name = nullptr;
                         talking = false;
                     }
-                    // else{
-                    // }
+                    // else{}
                 }
-                // else{
-                // }
             }
         }
 
@@ -405,9 +418,6 @@ int main(int argc, char * argv[]){
                             delete KAB; KAB = nullptr;
                             delete ticket; ticket = nullptr;
                             delete target_name; target_name = nullptr;
-                            if ((rc = send_packets(sock, LOGOUT_PACKET, "", "Could not logout message.")) < 1){
-                                break;
-                            }
                         }
                         else if (input == "cancel"){                                // delete ticket before session even starts
                             delete KAB; KAB = nullptr;
@@ -425,8 +435,11 @@ int main(int argc, char * argv[]){
                             }
                         }
                         else if ((input == "\\quit") || (input == "\\stop")){
+                            packet = std::string(1, END_TALK_PACKET) + unhexlify(makehex(now(), 8)) + random_octets(DIGEST_SIZE);      // pad random data to back - should make the size random
+                            packet += use_hash(HASH_NUM, packet);
+
                             // send quit to other side (does not force other end to end program)
-                            if ((rc = send_packets(lsock, END_TALK_PACKET, "", "Could not send terminate session message.")) < 1){}
+                            if ((rc = send_packets(lsock, TALK_PACKET, packet, "Could not send terminate session message.")) < 1){}
 
                             // clear session data
                             close(lsock); lsock = -1;
@@ -448,7 +461,11 @@ int main(int argc, char * argv[]){
                             }
                         }
                         else{                                                       // normal messages
-                            if ((rc = send_packets(sock, QUIT_PACKET, input, "Could not send message.")) < 1){
+                            packet = unhexlify(makehex(now(), 8)) + input;          // timestamp + message
+                            packet += use_hash(HASH_NUM, packet);                   // H(timestamp + message);
+                            packet = use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, packet, *KAB, random_octets(BLOCK_SIZE));
+
+                            if ((rc = send_packets(sock, QUIT_PACKET, packet, "Could not send message.")) < 1){
                                 break;
                             }
                         }
@@ -462,7 +479,7 @@ int main(int argc, char * argv[]){
                         delete target_name; target_name = nullptr;
                     }
                 }
-                else if (!username && !SA && !tgt){ // not logged in
+                else if (!username && !SA && !tgt){ // no credentials
                     if (input == "help"){
                         for(std::pair <std::string, std::string> const & help : CLIENT_NOT_LOGGED_IN_HELP){
                             std::cout << help.first << " " << help.second << std::endl;

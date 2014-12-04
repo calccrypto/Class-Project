@@ -36,8 +36,6 @@ Header file for User class of Kerberos project
 
 class User {
     private:
-        uint8_t sym;            // symmetric key algorithm
-        uint8_t hash;           // hash algorithm   (implies size of fields)
         std::string uid_salt;   // salt for the uid
         std::string uid;        // some unique identifier
 
@@ -64,14 +62,10 @@ class User {
 
         // Modifiers
         // need to call once if using default constructor
-        void set_sym(const uint8_t & SYM);
-        void set_hash(const uint8_t & HASH);
-        void set_uid(const std::string & SALT, const std::string & NAME);
-        void set_key(const std::string & SALT, const std::string & ENCRYPTED_KEY);
+        void set_uid(const uint8_t hash, const std::string & SALT, const std::string & NAME);
+        void set_key(const uint8_t hash, const std::string & SALT, const std::string & ENCRYPTED_KEY);
 
         // Accessors
-        uint8_t get_sym() const;
-        uint8_t get_hash() const;
         std::string get_uid_salt() const;
         std::string get_uid() const;
         std::string get_key_salt() const;   // cleartext
@@ -79,13 +73,13 @@ class User {
 
         // Operators
         User operator=(const User & u);
-        bool operator==(const std::string & name) const;
         bool operator==(const User & u) const;
         bool operator!=(const User & u) const;
         bool operator<(const User & u) const;
 
         // Miscellaneous
-        std::string str() const;            // returns formatted string
+        bool match(const uint8_t hash, const std::string & name) const; // check if H(salt + username) matches
+        std::string str() const;                                        // returns formatted string
 };
 
 std::ostream & operator<<(std::ostream & stream, const User & u);
