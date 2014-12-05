@@ -641,6 +641,10 @@ void * server_thread(std::map <std::string, std::string> & config, std::map <Thr
 
     std::cout << "Server thread end" << std::endl;
     // End server
+    
+    int sock = create_client_socket(LOCALHOST, DEFAULT_SERVER_PORT);
+	close(sock);
+    
     return nullptr;
 }
 
