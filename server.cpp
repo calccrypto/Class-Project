@@ -639,12 +639,9 @@ void * server_thread(std::map <std::string, std::string> & config, std::map <Thr
         ptr = nullptr;
     }
 
-    std::cout << "Server thread end" << std::endl;
     // End server
-    
-    int sock = create_client_socket(LOCALHOST, DEFAULT_SERVER_PORT);
-	close(sock);
-    
+    std::cout << "Server thread end" << std::endl;
+
     return nullptr;
 }
 
@@ -666,6 +663,10 @@ int main(int argc, char * argv[]){
     //socket setup
     int lsock = create_server_socket(port);
     if (lsock == -1){
+        return -1;
+    }
+    if (unblock(lsock) == -1){
+        std::cerr << "Error: Unable to unblock listening socket." << std::endl;
         return -1;
     }
 
@@ -724,8 +725,9 @@ int main(int argc, char * argv[]){
     }
 
     std::cout << "Server has stopped." << std::endl;
-    admin.join();
 
+    admin.join();
     close(lsock);
+
     return 0;
 }
