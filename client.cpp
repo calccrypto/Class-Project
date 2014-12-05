@@ -551,7 +551,9 @@ int main(int argc, char * argv[]){
                         std::cout << "Username: ";
                         std::cin >> *username;
                         std::cout << "Password: ";
+                        system("stty -echo");
                         std::cin >> password;   // should hide input
+                        system("stty echo");
 
                         // send login request
                         packet = unhexlify(makehex(username -> size(), 8)) + *username;
@@ -625,7 +627,9 @@ int main(int argc, char * argv[]){
                         std::cout << "New account username: ";
                         std::cin >> new_username;
                         std::cout << "New account password: ";
+                        system("stty -echo");
                         std::cin >> new_password;   // should hide input
+                        system("stty echo");
 
                         // // confirm password
                         // std::cout << "Please re-enter password: ";
