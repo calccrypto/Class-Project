@@ -1,7 +1,4 @@
-**Fix OpenPGP encrypt/decrypt bug**
 change error messages to be more generic (to avoid account enumeration and other attacks)
 master key to decrypt KDC subkeys
-add authenticator to each message sent from client to client
 multiple processes cannot listen to the same port at once, so multiple clients cannot listen to the same port
 add session id of some sort
-server loses connection when client quits

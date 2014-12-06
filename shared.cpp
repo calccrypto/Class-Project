@@ -140,6 +140,7 @@ bool unpacketize(const uint8_t & type, std::string & packet){
         std::cerr << "Error: Given length is too long." << std::endl;
         return false;
     }
+
     if (packet[PACKET_SIZE_INDICATOR] != type){
         std::cerr << "Error: Received packet is not the expected type" << std::endl;
         return false;
@@ -163,9 +164,6 @@ int send_packets(int sock, const uint8_t & type, const std::string & data, const
 
     // initial packet: 4 octet packet count + 1 octet type
     uint32_t packet_count = (data.size() / DATA_MAX_SIZE) + ((bool) (data.size() % DATA_MAX_SIZE));
-    if (packet_count == 0){
-        packet_count = 1;       // for packets without payloads
-    }
     std::string packet = unhexlify(makehex(packet_count, 8)) + std::string(1, type);
 
     // pack data (should never fail)
@@ -274,7 +272,7 @@ int recv_packets(int sock, const std::vector <uint8_t> & types, std::string & da
     // check expected type
     bool allowed = false;
     for(uint8_t const & t : types){
-        if (t == expected_type ){
+        if (t == expected_type){
             allowed = true;
             break;
         }

@@ -29,6 +29,12 @@ The networking code using POSIX sockets (Lines 73 - 89) was written by Andrew Zo
 under the 3-Clause BSD License. Please see LICENSE file for full license.
 */
 
+#ifdef __WIN32
+#include <windows.h>
+#elif __linux || __unix || __posix
+#include <termios.h>
+#endif
+
 #include "../OpenPGP/OpenPGP.h" // Hashes
 
 #include "shared.h"
@@ -56,6 +62,36 @@ const std::map <std::string, std::string> SESSION_HELP = {
     std::pair <std::string, std::string>("\\stop", ""),                  // stop session
 };
 // //////////////////////////////////////////////////
+
+// Thanks to Vargas @ stackoverflow ////////////////////////////////////////////////////////////////
+// no changes to code from http://stackoverflow.com/questions/1413445/read-a-password-from-stdcin
+// License at http://creativecommons.org/licenses/by-sa/3.0/
+void SetStdinEcho(bool enable = true)
+{
+#ifdef WIN32
+    HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode;
+    GetConsoleMode(hStdin, &mode);
+
+    if( !enable )
+        mode &= ~ENABLE_ECHO_INPUT;
+    else
+        mode |= ENABLE_ECHO_INPUT;
+
+    SetConsoleMode(hStdin, mode );
+
+#else
+    struct termios tty;
+    tcgetattr(STDIN_FILENO, &tty);
+    if( !enable )
+        tty.c_lflag &= ~ECHO;
+    else
+        tty.c_lflag |= ECHO;
+
+    (void) tcsetattr(STDIN_FILENO, TCSANOW, &tty);
+#endif
+}
+// /////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char * argv[]){
     BBS(static_cast <PGPMPI> (static_cast <unsigned int> (now())));
@@ -352,12 +388,22 @@ int main(int argc, char * argv[]){
                                     if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad SA.", "Could not send error message")) < 1){
                                         break;
                                     }
+                                    if (unblock(sock) == -1){
+                                        std::cerr << "Error: Could not unblock socket" << std::endl;
+                                        rc = -1;
+                                        break;
+                                    }
                                     continue;
                                 }
 
                                 // check hash
                                 if (use_hash(HASH_NUM, packet.substr(0, packet.size() - DIGEST_SIZE)) != packet.substr(packet.size() - DIGEST_SIZE, DIGEST_SIZE)){
                                     if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad checksum.", "Could not send error message")) < 1){
+                                        break;
+                                    }
+                                    if (unblock(sock) == -1){
+                                        std::cerr << "Error: Could not unblock socket" << std::endl;
+                                        rc = -1;
                                         break;
                                     }
                                     continue;
@@ -429,16 +475,31 @@ int main(int argc, char * argv[]){
                                                 if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad KAB.", "Could not send error message")) < 1){
                                                     break;
                                                 }
+                                                if (unblock(sock) == -1){
+                                                    std::cerr << "Error: Could not unblock socket" << std::endl;
+                                                    rc = -1;
+                                                    break;
+                                                }
                                                 continue;
                                             }
 
                                             if (use_hash(HASH_NUM, reply.substr(1, reply.size() - DIGEST_SIZE - 1)) != reply.substr(reply.size() - DIGEST_SIZE, DIGEST_SIZE)){
                                                 std::cerr << "Error: Received bad reply. Session not started." << std::endl;
+                                                if (unblock(sock) == -1){
+                                                    std::cerr << "Error: Could not unblock socket" << std::endl;
+                                                    rc = -1;
+                                                    break;
+                                                }
                                                 continue;
                                             }
 
                                             if ((now() - toint(reply.substr(1, 4), 256)) > TIME_SKEW){
                                                 std::cerr << "Error: Reply has expired. Session not started." << std::endl;
+                                                if (unblock(sock) == -1){
+                                                    std::cerr << "Error: Could not unblock socket" << std::endl;
+                                                    rc = -1;
+                                                    break;
+                                                }
                                                 continue;
                                             }
 
@@ -551,9 +612,9 @@ int main(int argc, char * argv[]){
                         std::cout << "Username: ";
                         std::cin >> *username;
                         std::cout << "Password: ";
-                        system("stty -echo");
-                        std::cin >> password;   // should hide input
-                        system("stty echo");
+                        SetStdinEcho(false);
+                        std::cin >> password;
+                        SetStdinEcho(true);
 
                         // send login request
                         packet = unhexlify(makehex(username -> size(), 8)) + *username;
@@ -584,6 +645,11 @@ int main(int argc, char * argv[]){
                            }
                             catch (std::exception & e){
                                 if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad KA.", "Could not send error message")) < 1){
+                                    break;
+                                }
+                                if (unblock(sock) == -1){
+                                    std::cerr << "Error: Could not unblock socket" << std::endl;
+                                    rc = -1;
                                     break;
                                 }
                                 continue;
@@ -621,24 +687,36 @@ int main(int argc, char * argv[]){
                         else if (packet[0] == QUIT_PACKET){
                             quit = true;
                         }
+                        if (unblock(sock) == -1){
+                            std::cerr << "Error: Could not unblock socket" << std::endl;
+                            rc = -1;
+                            break;
+                        }
                     }
                     else if (input == "new-account"){
                         std::string new_username, new_password, confirm;
                         std::cout << "New account username: ";
                         std::cin >> new_username;
                         std::cout << "New account password: ";
-                        system("stty -echo");
-                        std::cin >> new_password;   // should hide input
-                        system("stty echo");
+                        SetStdinEcho(false);
+                        std::cin >> new_password;
+                        SetStdinEcho(true);
 
-                        // // confirm password
-                        // std::cout << "Please re-enter password: ";
-                        // std::cin >> confirm;        // should hide input
+                        // confirm password
+                        std::cout << "Please re-enter password: ";
+                        SetStdinEcho(false);
+                        std::cin >> confirm;
+                        SetStdinEcho(true);
 
-                        // if (new_password != confirm){
-                            // std::cerr << "Error: Passwords do not match" << std::endl;
-                            // break;
-                        // }
+                        if (new_password != confirm){
+                            std::cerr << "Error: Passwords do not match" << std::endl;
+                            if (unblock(sock) == -1){
+                                std::cerr << "Error: Could not unblock socket" << std::endl;
+                                rc = -1;
+                                break;
+                            }
+                            continue;
+                        }
 
                         // send request to KDC
                         if ((rc = send_packets(sock, CREATE_ACCOUNT_PACKET, "", "Could not send request for new account.")) < 1){
@@ -646,60 +724,81 @@ int main(int argc, char * argv[]){
                         }
 
                         // receive failure message or public key
-                        // PGPPublicKey pub;
-                        // if ((rc = recv_packets(sock, {QUIT_PACKET, FAIL_PACKET, PUBLIC_KEY_PACKET}, packet, "Could not receive next packet.")) < 1){
-                            // break;
-                        // }
-                        // if (packet[0] == PUBLIC_KEY_PACKET){
-                            // packet = packet.substr(1, packet.size());
-                            // pub.read(packet);
-                        // }
-                        // else if (packet[0] == FAIL_PACKET){
-                            // std::cerr << packet.substr(1, packet.size() - 1) << std::endl;
-                            // continue;
-                        // }
-                        // else if (packet[0] == QUIT_PACKET){
-                            // quit = true;
-                            // break;
-                        // }
+                        PGPPublicKey pub;
+                        if ((rc = recv_packets(sock, {QUIT_PACKET, FAIL_PACKET, PUBLIC_KEY_PACKET}, packet, "Could not receive next packet.")) < 1){
+                            break;
+                        }
 
-                        // if (verify_key(pub, pub)){  // public key was signed by attached signature packet
+                        if (packet[0] == PUBLIC_KEY_PACKET){
+                            packet = packet.substr(1, packet.size() - 1);
+                            pub.read(packet);
+                        }
+                        else if (packet[0] == FAIL_PACKET){
+                            std::cerr << packet.substr(1, packet.size() - 1) << std::endl;
+                            if (unblock(sock) == -1){
+                                std::cerr << "Error: Could not unblock socket" << std::endl;
+                                rc = -1;
+                                break;
+                            }
+                            continue;
+                        }
+                        else if (packet[0] == QUIT_PACKET){
+                            quit = true;
+                            break;
+                        }
+
+                        if (verify_key(pub, pub)){  // public key was signed by attached signature packet
                             /* need to check if public key came from expected user */
-
                             std::string salt = random_octets(DIGEST_SIZE);      // KA salt
                             packet = unhexlify(makehex(new_username.size(), 8)) + new_username + salt + use_hash(HASH_NUM, salt + new_password);
 
                             // encrypt with PGP
-                            // packet = encrypt_pka(pub, packet, "", SYM_NUM, COMPRESSION_ALGORITHM, true).write();
+                            packet = encrypt_pka(pub, packet, "", SYM_NUM, COMP_NUM, (RESYNC == 18)).write();
 
                             if ((rc = send_packets(sock, PKA_ENCRYPTED_PACKET, packet, "Could not send request for new account.")) < 1){
+                                std::cout << "failed to send" << std::endl;
                                 break;
                             }
-                        // }
-                        // else{                   // public key is bad
-                            // std::cout << "Error: Received bad public key." << std::endl;
-                            // if ((rc = send_packets(sock, FAIL_PACKET, "Error: Received bad public key", "Could not send request for new account.")) < 1){
-                            //     break;
-                            // }
-                            // break;
-                        // }
+                        }
+                        else{                   // public key is bad
+                            std::cout << "Error: Received bad public key." << std::endl;
+                            if ((rc = send_packets(sock, FAIL_PACKET, "Error: Received bad public key", "Could not send request for new account.")) < 1){
+                                break;
+                            }
+                            if (unblock(sock) == -1){
+                                std::cerr << "Error: Could not unblock socket" << std::endl;
+                                rc = -1;
+                                break;
+                            }
+                            continue;
+                        }
 
                         if ((rc = recv_packets(sock, {QUIT_PACKET, FAIL_PACKET, SUCCESS_PACKET}, packet, "Could not receive response packet.")) < 1){
                             break;
                         }
                         if (packet[0] == SUCCESS_PACKET){
                             std::cout << "Account created" << std::endl;
+
                         }
                         else if (packet[0] == FAIL_PACKET){
                             std::cerr << "Error: Account could not be created" << std::endl;
-                            continue;
                         }
                         else if (packet[0] == QUIT_PACKET){
                             quit = true;
                         }
+                        if (unblock(sock) == -1){
+                            std::cerr << "Error: Could not unblock socket" << std::endl;
+                            rc = -1;
+                            break;
+                        }
                     }
                     else{
                         std::cerr << "Error: Unknown input: " << input << std::endl;
+                    }
+                    if (unblock(sock) == -1){
+                        std::cerr << "Error: Could not unblock socket" << std::endl;
+                        rc = -1;
+                        break;
                     }
                 }
                 else{
@@ -713,12 +812,6 @@ int main(int argc, char * argv[]){
                     delete ticket; ticket = nullptr;
                     delete target_name; target_name = nullptr;
                     talking = false;
-                }
-
-                if (unblock(sock) == -1){
-                    std::cerr << "Error: Could not unblock socket" << std::endl;
-                    rc = -1;
-                    break;
                 }
             }
         }

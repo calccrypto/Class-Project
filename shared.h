@@ -65,13 +65,14 @@ const uint8_t SYM_NUM = 9;                                                      
 const std::string SYM_NAME = Symmetric_Algorithms.at(SYM_NUM);                      // default symmetric key algorithm name
 const unsigned int KEY_SIZE = Symmetric_Algorithm_Key_Length.at(SYM_NAME) >> 3;     // symmetric key algorithm key size (octest)
 const unsigned int BLOCK_SIZE = Symmetric_Algorithm_Block_Length.at(SYM_NAME) >> 3; // symmetric key algorithm block size (octets)
+const uint32_t RESYNC = 9;                                                          // OpenPGP packet tag 9 triggers resync
 
 // SHA256
 const uint8_t HASH_NUM = 8;                                                         // default hashing algorithm OpenPGP number for SHA256
 const std::string HASH_NAME = Hash_Algorithms.at(HASH_NUM);                         // default hash algorithm name
 const unsigned int DIGEST_SIZE = Hash_Length.at(HASH_NAME) >> 3;                    // hashing algorithm output size (octets)
-const uint8_t COMPRESSION_ALGORITHM = 1;                                            // default compression algorithm: ZLIB
-const uint32_t RESYNC = 9;                                                          // OpenPGP packet tag 9 triggers resync
+
+const uint8_t COMP_NUM = 1;                                                         // default compression algorithm: ZLIB
 
 const uint32_t PACKET_SIZE = 128;                         // 128 octets per packet
 const uint32_t PACKET_HEADER_SIZE = 1;                    // 1 octet
@@ -87,7 +88,7 @@ const int8_t FAIL_PACKET             = 2;                 // message
 const int8_t SUCCESS_PACKET          = 3;                 // message
 
 // server only accepts these packets at the top of the loop
-const int8_t CREATE_ACCOUNT_PACKET   = 4;                 // username
+const int8_t CREATE_ACCOUNT_PACKET   = 4;                 // no payload
 const int8_t LOGIN_PACKET            = 5;                 // username
 const int8_t CREDENTIALS_PACKET      = 6;                 // session key and TGT encrypted with user key
 const int8_t REQUEST_PACKET          = 7;                 // target name + TGT + authenticator

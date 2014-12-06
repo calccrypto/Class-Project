@@ -3,7 +3,9 @@
 Copyright (c) 2014 Omar Azhar
 Copyright (c) 2014 Jason Lee @ calccrypto at gmail.com
 
-Please see LICENSE file for license. The networking code was modified from code written by Andrew Zonenberg.
+Please see LICENSE file for license. 
+The networking code was modified from code written by Andrew Zonenberg.
+The terminal echo on/off code is under the Creative Commons Attribution-ShareAlike 3.0 Unported license. Full description is provided above relavant code.
 
 ## IMPORTANT
 **This code was not written for actual use.**

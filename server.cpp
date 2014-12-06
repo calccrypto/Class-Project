@@ -77,27 +77,36 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
         else if (packet[0] == CREATE_ACCOUNT_PACKET){                    // create new account
             // empty packet
 
-            std::cout << "Sending PGP key" << std::endl;
             // Open PGP public key
-            // std::ifstream pub_file(public_key_file);
-            // if (pub_file){                      // if the file opened
-                // PGPPublicKey pub(pub_file);     // Parse key file to remove garbage
-                // if ((rc = send_packets(args -> get_sock(), PUBLIC_KEY_PACKET, pub.write())) < 1){
-                    // continue;
-                // }
-            // }
-            // else{                               // if not opened
-                // std::cerr << "Could not open public key file \"" << public_key_file << "\"" << std::endl;
-                // if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Could not open public key.")) < 1){
-                //     break;
-                // }
-                // continue;
-            // }
-
-
-            // receive fail packet or encrypted shared key
-            if ((rc = recv_packets(args -> get_sock(), {FAIL_PACKET, PKA_ENCRYPTED_PACKET}, packet)) < 1){
+            std::ifstream pub_file(args -> get_config() -> at(PUBLIC_KEY_FILE));
+            if (pub_file){                      // if the file opened
+                PGPPublicKey pub(pub_file);     // Parse key file to remove garbage
+                if ((rc = send_packets(args -> get_sock(), PUBLIC_KEY_PACKET, pub.write())) < 1){
+                    break;
+                }
+            }
+            else{                               // if not opened
+                std::cerr << "Could not open public key file \"" << args -> get_config() -> at(PUBLIC_KEY_FILE) << "\"" << std::endl;
+                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Could not open public key.")) < 1){
+                    break;
+                }
                 continue;
+            }
+
+            if (block(args -> get_sock()) == -1){
+                std::cerr << "Error: Could not block socket." << std::endl;
+                break;
+            }
+
+            // receive fail packet or encrypted and hashed username + shared key
+            if ((rc = recv_packets(args -> get_sock(), {QUIT_PACKET, FAIL_PACKET, PKA_ENCRYPTED_PACKET}, packet)) < 1){
+                std::cout << "failed to receive" << std::endl;
+                break;
+            }
+
+            if (unblock(args -> get_sock()) == -1){
+                std::cerr << "Error: Could not block socket." << std::endl;
+                break;
             }
 
             if (packet[0] == PKA_ENCRYPTED_PACKET){
@@ -106,14 +115,13 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 if (!pri_file){
                     std::cerr << "Error: Unable to open \"" << args -> get_config() -> at(PRIVATE_KEY_FILE) << "\"" << std::endl;
                     if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Unable to open secret key.")) < 1){
-                        continue;
+                        break;
                     }
                 }
 
-                // PGPSecretKey pri(pri_file);
-                // PGPMessage m(packet);
-                // std::string data = decrypt_pka(pri, m, pki_key, false);
-                std::string data = packet;
+                PGPSecretKey pri(pri_file);
+                PGPMessage m(packet);
+                std::string data = decrypt_pka(pri, m, args -> get_config() -> at(PKI_KEY), false);
 
                 uint32_t len = toint(data.substr(0, 4), 256);
                 std::string new_username = data.substr(4, len);
@@ -157,6 +165,9 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             else if (packet[0] == FAIL_PACKET){
                 std::cerr << packet.substr(1, packet.size() - 1) << std::endl;
                 continue;
+            }
+            else if (packet[0] == QUIT_PACKET){
+                quit = true;
             }
         }
         else if (packet[0] == LOGIN_PACKET){
@@ -356,6 +367,8 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
         std::cerr << "Error: Lost connection." << std::endl;
     }
 
+    args -> set_quit(true);
+
     // close the socket
     close(args -> get_sock());
 
@@ -443,7 +456,7 @@ int read_users(std::mutex & mutex, std::set <User> & users, std::ifstream & save
 
     try{
         users_str = use_OpenPGP_CFB_decrypt(SYM_NUM, RESYNC, users_str, key);               // decrypt file data
-        users_str = users_str.substr(BLOCK_SIZE + 2, users_str.size() - BLOCK_SIZE - 2);        // remove prefix
+        users_str = users_str.substr(BLOCK_SIZE + 2, users_str.size() - BLOCK_SIZE - 2);    // remove prefix
     }
     catch (std::exception & e){
         std::cout << "Error: Bad database key." << std::endl;
@@ -488,21 +501,6 @@ int read_users(std::mutex & mutex, std::set <User> & users, const std::string & 
     return read_users(mutex, users, save, key);
 }
 
-unsigned int clean_threads(std::map <ThreadData *, std::thread> & threads, std::mutex & mutex){
-    unsigned int deleted = 0;
-    for(std::pair <ThreadData * const, std::thread> & t : threads){
-        if (t.first -> get_quit()){
-            mutex.lock();
-            t.second.join();
-            ThreadData * temp = t.first;
-            threads.erase(temp);
-            delete temp; temp = nullptr;
-            mutex.unlock();
-        }
-    }
-    return deleted;
-}
-
 // admin command line
 void * server_thread(std::map <std::string, std::string> & config, std::map <ThreadData *, std::thread> & threads, std::set <User> & users, std::mutex & mutex, bool & quit){
     int rc = read_users(mutex, users, config.at(USERS_FILE),  config.at(USERS_KEY));
@@ -518,8 +516,6 @@ void * server_thread(std::map <std::string, std::string> & config, std::map <Thr
 
     // take in and parse commands
     while (!quit){
-        clean_threads(threads, mutex);
-
         if (nonblock_getline(cmd) == 1){
             std::stringstream s; s << cmd;
             if (s >> cmd){
@@ -622,27 +618,35 @@ void * server_thread(std::map <std::string, std::string> & config, std::map <Thr
     }
 
     // force all clients to end
-    while(threads.size()){
-        ThreadData * ptr = threads.begin() -> first;
-        ptr -> set_quit(true);
-
-        std::stringstream s;
-        s << "Error: Could not send quit message to client " << ptr -> get_thread_id() << ".";
-
-        if (send_packets(ptr -> get_sock(), QUIT_PACKET, "", s.str()) < 1){
-            std::cerr << s.str() << std::endl;
-        }
-
-        threads.begin() -> second.join();
-        threads.erase(ptr);
-        delete ptr;
-        ptr = nullptr;
+    for(std::pair <ThreadData * const, std::thread> & t : threads){
+        t.first -> set_quit(true);
     }
 
     // End server
     std::cout << "Server thread end" << std::endl;
 
     return nullptr;
+}
+
+// clean up threads
+unsigned int clean_threads(std::map <ThreadData *, std::thread> & threads, std::mutex & mutex, const bool & quit){
+    unsigned int deleted = 0;
+    std::map <ThreadData * const, std::thread>::iterator t = threads.begin();
+    while (t != threads.end()){
+        if (quit || t -> first -> get_quit()){
+            mutex.lock();
+            t -> second.join();
+            ThreadData * temp = t++ -> first;
+            threads.erase(temp);
+            delete temp; temp = nullptr;
+            deleted++;
+            mutex.unlock();
+        }
+        else{
+            t++;
+        }
+    }
+    return deleted;
 }
 
 int main(int argc, char * argv[]){
@@ -679,7 +683,7 @@ int main(int argc, char * argv[]){
         std::make_pair(SECRET_KEY, use_hash(HASH_NUM, "SUPER SECRET KEY")),           // encrypts all keys
         std::make_pair(PUBLIC_KEY_FILE, "testKDCpublic"),                             // public key file
         std::make_pair(PRIVATE_KEY_FILE, "testKDCprivate"),                           // private key file
-        std::make_pair(PKI_KEY, "KDC"),                                               // key to unlock private key data
+        std::make_pair(PKI_KEY, "kdc"),                                               // key to unlock private key data
         std::make_pair(USERS_FILE, "users"),                                          // name of file containing users
         std::make_pair(USERS_KEY, use_hash(HASH_NUM, "USERS FILE KEY")),              // key for users list
         std::make_pair(USERS_ACCOUNT_KEY, use_hash(HASH_NUM, "USERS ACCOUNT KEY")),   // key for shared keys
@@ -722,12 +726,17 @@ int main(int argc, char * argv[]){
             std::cerr << "Could not create thread due to: " << sys_err.what() << "." << std::endl;
         }
         mutex.unlock();
+
+        clean_threads(threads, mutex, quit);
     }
 
-    std::cout << "Server has stopped." << std::endl;
+    // stop and remove all threads from map
+    clean_threads(threads, mutex, quit);
 
     admin.join();
     close(lsock);
+
+    std::cout << "Server has stopped." << std::endl;
 
     return 0;
 }
