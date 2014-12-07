@@ -385,7 +385,7 @@ int main(int argc, char * argv[]){
                                 }
                                 catch (std::exception & e){
                                     std::cerr << e.what() << std::endl;
-                                    if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad SA.", "Could not send error message")) < 1){
+                                    if ((rc = send_packets(lsock, FAIL_PACKET, "", "Could not send error message")) < 1){
                                         break;
                                     }
                                     if (unblock(sock) == -1){
@@ -398,7 +398,8 @@ int main(int argc, char * argv[]){
 
                                 // check hash
                                 if (use_hash(HASH_NUM, packet.substr(0, packet.size() - DIGEST_SIZE)) != packet.substr(packet.size() - DIGEST_SIZE, DIGEST_SIZE)){
-                                    if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad checksum.", "Could not send error message")) < 1){
+                                    std::cout << "Error: Calculated hash does not match given hash" << std::endl;
+                                    if ((rc = send_packets(lsock, FAIL_PACKET, "", "Could not send error message")) < 1){
                                         break;
                                     }
                                     if (unblock(sock) == -1){
@@ -644,7 +645,8 @@ int main(int argc, char * argv[]){
                                 packet = packet.substr(BLOCK_SIZE + 2, packet.size() - BLOCK_SIZE - 2); // remove prefix
                            }
                             catch (std::exception & e){
-                                if ((rc = send_packets(lsock, FAIL_PACKET, "Error: Bad KA.", "Could not send error message")) < 1){
+                                std::cout << "Error: Incorrect password" << std::endl;
+                                if ((rc = send_packets(lsock, FAIL_PACKET, "", "Could not send error message")) < 1){
                                     break;
                                 }
                                 if (unblock(sock) == -1){

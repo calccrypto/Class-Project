@@ -114,7 +114,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 std::ifstream pri_file(args -> get_config() -> at(PRIVATE_KEY_FILE), std::ios::binary);
                 if (!pri_file){
                     std::cerr << "Error: Unable to open \"" << args -> get_config() -> at(PRIVATE_KEY_FILE) << "\"" << std::endl;
-                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Unable to open secret key.")) < 1){
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "", "Could not open private key file.")) < 1){
                         break;
                     }
                 }
@@ -202,7 +202,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 }
                 catch (std::exception & e){
                     std::cerr << e.what() << std::endl;
-                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Bad user account key.", "Could not send error message")) < 1){
+                    if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "", "Could not send error message")) < 1){
                         break;
                     }
                     continue;
@@ -217,7 +217,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
                 }
             }
             else{           // user not found
-                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Could not find username.", "Could not send failure message.")) < 1){
+                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "", "Could not send failure message.")) < 1){
                     break;
                 }
                 continue;
@@ -236,7 +236,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             }
             catch (std::exception & e){
                 std::cerr <<1 << e.what() << std::endl;
-                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "Error: Bad TGT key.", "Could not send error message")) < 1){
+                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "", "Could not send error message for bad TGT key.")) < 1){
                     break;
                 }
                 continue;
@@ -256,7 +256,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             }
             catch (std::exception & e){
                 std::cerr <<2 << e.what() << std::endl;
-                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "Error: Bad session key.", "Could not send error message")) < 1){
+                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "", "Could not send error message for bad SA decrypt.")) < 1){
                     break;
                 }
                 continue;
@@ -265,7 +265,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             // check request hash
             if (use_hash(HASH_NUM, request.substr(0, request.size() - DIGEST_SIZE)) != request.substr(request.size() - DIGEST_SIZE, DIGEST_SIZE)){
                 std::cerr << "Error: Request hash does not match" << std::endl;
-                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "Error: Bad hash.", "Could not send error message")) < 1){
+                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "", "Could not send error message for bad hash.")) < 1){
                     break;
                 }
                 continue;
@@ -278,14 +278,14 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
 
             // check authenticator
             if (auth.size() != 4){
-                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Bad timestamp size.", "Could send error message")) < 1){
+                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "", "Could send error message for bad authenticator.")) < 1){
                     break;
                 }
                 continue;
             }
 
             if ((now() - toint(auth, 256)) > TIME_SKEW){
-                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Error: Request has expired.", "Could send error message")) < 1){
+                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "", "Could send error message for expired authenticator.")) < 1){
                     break;
                 }
                 continue;
@@ -301,7 +301,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             }
 
             if (!target){
-                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "Target not found.")) < 1){
+                if ((rc = send_packets(args -> get_sock(), FAIL_PACKET, "", "Could not send error message for target not found.")) < 1){
                     break;
                 }
                 continue;
@@ -340,7 +340,7 @@ void * client_thread(ThreadData * args, std::mutex & mutex, bool & quit){
             }
             catch (std::exception & e){
                 std::cerr << e.what() << std::endl;
-                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "Error: Bad user account key.", "Could not send error message")) < 1){
+                if ((rc = send_packets(SYM_NUM, FAIL_PACKET, "", "Could not send error message for bad user account key.")) < 1){
                     break;
                 }
                 continue;
