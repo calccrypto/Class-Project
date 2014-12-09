@@ -594,7 +594,7 @@ void * server_thread(std::map <std::string, std::string> & config, std::map <Thr
                             User u;
                             u.set_uid(HASH_NUM, random_octets(DIGEST_SIZE), new_username);
                             std::string salt = random_octets(DIGEST_SIZE);
-                            u.set_key(HASH_NUM, salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, use_hash(HASH_NUM, salt + password), config.at(USERS_ACCOUNT_KEY), random_octets(DIGEST_SIZE)));
+                            u.set_key(HASH_NUM, salt, use_OpenPGP_CFB_encrypt(SYM_NUM, RESYNC, use_hash(HASH_NUM, salt + use_hash(HASH_NUM, password)), config.at(USERS_ACCOUNT_KEY), random_octets(DIGEST_SIZE)));
                             users.insert(u);
                             mutex.unlock();
                         }

@@ -151,7 +151,7 @@ int main(int argc, char * argv[]){
     // commandline
     while (!quit && rc){
         // if the client has identification but no session information
-        if (username && !KAB && !ticket){
+        if (username && !KAB && !ticket && !talking){
             // expect packets to come in at any time
             rc = recv_packets(lsock, {START_TALK_PACKET}, packet, "Could not receive data from listening port.");
             if (rc == -2){}                         // received nothing
@@ -241,6 +241,7 @@ int main(int argc, char * argv[]){
             }
         }
 
+
         // immediately allow for packets to be received if client has identification and session information and is in a session
         if (username && KAB && ticket && talking){  // session has been established
             // receive from other end
@@ -298,6 +299,16 @@ int main(int argc, char * argv[]){
             }
         }
 
+        // if previous loop's input was used
+        if (in_rc == 1){
+            input = "";
+            std::cout << "> ";
+            if (unblock(sock) == -1){
+                std::cerr << "Error: Could not unblock socket" << std::endl;
+                break;
+            }
+        }
+        
         rc = recv_packets(sock, {QUIT_PACKET}, packet, "Could not receive data from listening port.");
         if (rc == -2){}                             // received nothing
         else if ((rc == -1) || (rc == 0)){          // bad socket
@@ -306,12 +317,6 @@ int main(int argc, char * argv[]){
         else{                                       // received quit packet
             quit = true;
             break;
-        }
-
-        // if previous loop's input was used
-        if (in_rc == 1){
-            input = "";
-            std::cout << "> ";
         }
 
         // if command is inputted
@@ -388,11 +393,6 @@ int main(int argc, char * argv[]){
                                     if ((rc = send_packets(lsock, FAIL_PACKET, "", "Could not send error message")) < 1){
                                         break;
                                     }
-                                    if (unblock(sock) == -1){
-                                        std::cerr << "Error: Could not unblock socket" << std::endl;
-                                        rc = -1;
-                                        break;
-                                    }
                                     continue;
                                 }
 
@@ -400,11 +400,6 @@ int main(int argc, char * argv[]){
                                 if (use_hash(HASH_NUM, packet.substr(0, packet.size() - DIGEST_SIZE)) != packet.substr(packet.size() - DIGEST_SIZE, DIGEST_SIZE)){
                                     std::cout << "Error: Calculated hash does not match given hash" << std::endl;
                                     if ((rc = send_packets(lsock, FAIL_PACKET, "", "Could not send error message")) < 1){
-                                        break;
-                                    }
-                                    if (unblock(sock) == -1){
-                                        std::cerr << "Error: Could not unblock socket" << std::endl;
-                                        rc = -1;
                                         break;
                                     }
                                     continue;
@@ -534,7 +529,7 @@ int main(int argc, char * argv[]){
                             delete target_name; target_name = nullptr;
                         }
                         else{
-                            std::cerr << "Error: Unknown input: " << input << "." << std::endl;
+                            std::cerr << "Error: Unknown input: \"" << input << "\"." << std::endl;
                         }
                     }
                     else if (KAB && ticket && talking){                             // talking to someone
@@ -620,6 +615,9 @@ int main(int argc, char * argv[]){
                         // send login request
                         packet = unhexlify(makehex(username -> size(), 8)) + *username;
 
+                        // hash password
+                        password = use_hash(HASH_NUM, password);
+
                         if ((rc = send_packets(sock, LOGIN_PACKET, packet, "Request for TGT Failed.")) < 1){
                             delete username; username = nullptr;
                             input = "";
@@ -649,11 +647,6 @@ int main(int argc, char * argv[]){
                                 if ((rc = send_packets(lsock, FAIL_PACKET, "", "Could not send error message")) < 1){
                                     break;
                                 }
-                                if (unblock(sock) == -1){
-                                    std::cerr << "Error: Could not unblock socket" << std::endl;
-                                    rc = -1;
-                                    break;
-                                }
                                 continue;
                             }
 
@@ -671,15 +664,6 @@ int main(int argc, char * argv[]){
                                 rc = -1;
                                 break;
                             }
-
-                            // make listening socket nonblocking
-                            if (unblock(lsock) == -1){
-                                std::cerr << "Error: Could not set listening socket to nonblocking mode" << std::endl;
-                                close(lsock);
-                                close(sock);
-                                rc = -1;
-                                break;
-                            }
                         }
                         else if (packet[0] == FAIL_PACKET){
                             std::cerr << packet.substr(1, packet.size() - 1) << std::endl;
@@ -688,11 +672,6 @@ int main(int argc, char * argv[]){
                         }
                         else if (packet[0] == QUIT_PACKET){
                             quit = true;
-                        }
-                        if (unblock(sock) == -1){
-                            std::cerr << "Error: Could not unblock socket" << std::endl;
-                            rc = -1;
-                            break;
                         }
                     }
                     else if (input == "new-account"){
@@ -712,13 +691,14 @@ int main(int argc, char * argv[]){
 
                         if (new_password != confirm){
                             std::cerr << "Error: Passwords do not match" << std::endl;
-                            if (unblock(sock) == -1){
-                                std::cerr << "Error: Could not unblock socket" << std::endl;
-                                rc = -1;
-                                break;
-                            }
                             continue;
                         }
+
+                        // does it actually clear the string?
+                        confirm.clear();
+
+                        // hash password
+                        new_password = use_hash(HASH_NUM, new_password);
 
                         // send request to KDC
                         if ((rc = send_packets(sock, CREATE_ACCOUNT_PACKET, "", "Could not send request for new account.")) < 1){
@@ -737,11 +717,6 @@ int main(int argc, char * argv[]){
                         }
                         else if (packet[0] == FAIL_PACKET){
                             std::cerr << packet.substr(1, packet.size() - 1) << std::endl;
-                            if (unblock(sock) == -1){
-                                std::cerr << "Error: Could not unblock socket" << std::endl;
-                                rc = -1;
-                                break;
-                            }
                             continue;
                         }
                         else if (packet[0] == QUIT_PACKET){
@@ -767,11 +742,6 @@ int main(int argc, char * argv[]){
                             if ((rc = send_packets(sock, FAIL_PACKET, "Error: Received bad public key", "Could not send request for new account.")) < 1){
                                 break;
                             }
-                            if (unblock(sock) == -1){
-                                std::cerr << "Error: Could not unblock socket" << std::endl;
-                                rc = -1;
-                                break;
-                            }
                             continue;
                         }
 
@@ -788,19 +758,9 @@ int main(int argc, char * argv[]){
                         else if (packet[0] == QUIT_PACKET){
                             quit = true;
                         }
-                        if (unblock(sock) == -1){
-                            std::cerr << "Error: Could not unblock socket" << std::endl;
-                            rc = -1;
-                            break;
-                        }
                     }
                     else{
-                        std::cerr << "Error: Unknown input: " << input << std::endl;
-                    }
-                    if (unblock(sock) == -1){
-                        std::cerr << "Error: Could not unblock socket" << std::endl;
-                        rc = -1;
-                        break;
+                        std::cerr << "Error: Unknown input: \"" << input << "\"." << std::endl;
                     }
                 }
                 else{
